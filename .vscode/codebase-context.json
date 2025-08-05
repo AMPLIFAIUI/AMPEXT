@@ -1,0 +1,110 @@
+{
+  "name": "AMP Codebase Context",
+  "description": "Permanent codebase context for AMP (Auto Memory Persistence) project",
+  "version": "2.0.0",
+  "lastUpdated": "2025-07-21",
+  
+  "projectOverview": {
+    "name": "A.M.P - Auto Memory Persistence",
+    "type": "Chrome Extension + Electron Desktop App",
+    "architecture": "Native Messaging Only",
+    "purpose": "Infinite context memory system for AI conversations"
+  },
+  
+  "coreArchitecture": {
+    "memorySystem": "5x1MB Hot Memory Pool with cascading overflow",
+    "zipperArchitecture": "Dual Zipper (Fat + Thin) with S1-S9 blocks",
+    "communication": "Native messaging between Chrome extension and Electron app",
+    "storage": "SQLite database in user data directory",
+    "encryption": "AES-256 with rotating session keys"
+  },
+  
+  "keyComponents": {
+    "chromeExtension": {
+      "path": "ext/",
+      "files": ["background.js", "content.js", "utils.js", "dropdown.js"],
+      "manifest": "ext/manifest.json",
+      "permissions": ["storage", "activeTab", "tabs", "scripting", "unlimitedStorage"]
+    },
+    "electronApp": {
+      "path": "desktop-ui/",
+      "files": ["main.js", "renderer.js", "index.html", "preload.js"],
+      "storage": "sqlite-storage.js",
+      "database": "memory.db in user data directory"
+    },
+    "nativeMessaging": {
+      "host": "amp-native-host.js",
+      "config": "com.ampiq.amp.native.json",
+      "protocol": "Native messaging only (no HTTP server)"
+    }
+  },
+  
+  "memoryFlow": {
+    "capture": "Content scripts extract text from AI conversations",
+    "processing": "Background script processes and stores in 5x1MB slots",
+    "overflow": "Desktop app receives overflow data via native messaging",
+    "indexing": "SQLite database indexes conversations for fast retrieval",
+    "injection": "GUI allows text highlighting and injection back to AI pages"
+  },
+  
+  "dataStructures": {
+    "memoryChunk": {
+      "id": "string",
+      "conversation_id": "string", 
+      "fullText": "string",
+      "summary": "string",
+      "ai_provider": "string (chatgpt|claude|gemini|etc)",
+      "tab_id": "string",
+      "topic": "string",
+      "timestamp": "number",
+      "slot": "number (1-9)",
+      "size": "number",
+      "inDom": "boolean",
+      "inHot": "boolean",
+      "sessionActive": "boolean"
+    },
+    "fatZipper": "Complete S1-S9 blocks with full data",
+    "thinZipper": "Compressed S9 tags for fast lookup"
+  },
+  
+  "fluidMemorySystem": {
+    "backwardRolling": "When user scrolls up, fat zipper rolls backward to index missed content",
+    "previousChatDetection": "System detects when user opens previous conversation",
+    "contextRestoration": "Automatically restores memory for previous conversations",
+    "gapFilling": "Detects and fills memory gaps through backward scanning"
+  },
+  
+  "storageConfiguration": {
+    "hotMemory": "5MB (5x1MB slots)",
+    "domMirror": "1MB crash safety backup",
+    "sqliteDatabase": "Unlimited indexed storage in user data directory",
+    "chromeStorage": "100MB for crash recovery"
+  },
+  
+  "developmentRules": {
+    "nativeMessagingOnly": "No HTTP servers, only native messaging communication",
+    "dataPreservation": "Never lose data - archive to slot 9 and desktop storage",
+    "fluidIndexing": "System adapts to user navigation patterns",
+    "contextAwareness": "Detect previous chats and restore context",
+    "storageConsistency": "Maintain size limits across all components"
+  },
+  
+  "keyFiles": {
+    "memoryManagement": "ext/utils.js (MemoryPool class)",
+    "backgroundLogic": "ext/background.js (main extension logic)", 
+    "contentCapture": "ext/content.js (page content extraction)",
+    "desktopGUI": "desktop-ui/renderer.js (live text viewer)",
+    "nativeHost": "amp-native-host.js (native messaging bridge)",
+    "sqliteStorage": "desktop-ui/sqlite-storage.js (database operations)"
+  },
+  
+  "currentImplementationStatus": {
+    "basicMemorySystem": "✅ Implemented",
+    "nativeMessaging": "✅ Implemented", 
+    "electronGUI": "✅ Implemented",
+    "textHighlighting": "❌ Needs implementation",
+    "dualZipperArchitecture": "❌ Needs implementation",
+    "backwardRolling": "❌ Needs implementation",
+    "sqliteIndexing": "❌ Needs implementation"
+  }
+}

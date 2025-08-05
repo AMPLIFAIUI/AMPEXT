@@ -1,0 +1,25 @@
+directories:
+  output: temp-build
+  buildResources: build
+appId: com.ampiq.desktop
+productName: AMPiQ
+files:
+  - filter:
+      - '**/*'
+      - interface/**/*
+      - node_modules/better-sqlite3/**/*
+      - node_modules/bindings/**/*
+      - '!dist/**/*'
+asarUnpack:
+  - node_modules/better-sqlite3/**
+win:
+  target: nsis
+  icon: ../assets/icon256.png
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: true
+extraResources: []
+electronVersion: 28.3.3

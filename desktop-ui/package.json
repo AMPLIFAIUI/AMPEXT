@@ -1,0 +1,69 @@
+{
+  "name": "A.M.P",
+  "version": "2.0.0",
+  "description": "A.M.P - Advanced Memory Persistence",
+  "main": "main.js",
+  "icon": "../assets/icon256.png",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "dist": "electron-builder --publish=never",
+    "clean": "rimraf dist node_modules package-lock.json",
+    "clean-build": "npm run clean && npm install && npm run dist",
+    "cleanup": "powershell -ExecutionPolicy Bypass -File cleanup.ps1"
+  },
+  "build": {
+    "appId": "com.ampiq.desktop",
+    "productName": "AMPiQ",
+    "directories": {
+      "output": "temp-build"
+    },
+    "files": [
+      "**/*",
+      "interface/**/*",
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/bindings/**/*",
+      "!dist/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "../assets/icon256.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": true
+    },
+    "extraResources": []
+  },
+  "keywords": [
+    "memory",
+    "ai",
+    "conversation",
+    "persistence",
+    "ampiq"
+  ],
+  "author": "AMPiQ",
+  "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "bindings": "^1.5.0",
+    "express": "^5.1.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "7zip-bin": "^5.2.0",
+    "electron": "28.3.3",
+    "electron-builder": "^24.13.3",
+    "eslint": "^9.32.0",
+    "rimraf": "^5.0.5"
+  },
+  "overrides": {
+    "glob": "^10.3.10"
+  }
+}

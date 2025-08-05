@@ -1,0 +1,821 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>A.M.P</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 420px;
+            min-width: 420px;
+            max-width: 420px;
+            min-height: 1020px;
+            max-height: 700px;
+            height: auto;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+            color: #ffffff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 13px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header with pin functionality */
+        .header {
+            background: linear-gradient(135deg, #2c3e50, #34495e);
+            padding: 15px 20px;
+            border-bottom: 2px solid #3498db;
+            position: relative;
+            display: flex;
+            align-items: center;
+            min-height: 70px;
+            flex-shrink: 0;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .amp-icon-container {
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+
+        .amp-icon-container:hover {
+            transform: scale(1.1);
+        }
+
+        .amp-icon-container.pinned {
+            animation: pulse-glow 2s infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { filter: drop-shadow(0 0 5px #3498db); }
+            50% { filter: drop-shadow(0 0 15px #3498db); }
+        }
+
+        @keyframes color-flash {
+            0%, 100% { filter: grayscale(1); }
+            25% { filter: grayscale(0.8) sepia(0.3) hue-rotate(30deg); }
+            50% { filter: grayscale(1); }
+        }
+
+        .amp-icon {
+            width: 40px;
+            height: 40px;
+        }
+
+        .title-section h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #3498db;
+            margin-bottom: 2px;
+        }
+
+        .title-section .subtitle {
+            font-size: 11px;
+            color: #bdc3c7;
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-left: auto;
+        }
+
+        /* Header status indicators */
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: #bdc3c7;
+        }
+
+        .status-text {
+            font-weight: 500;
+        }
+
+        .pin-btn, .close-btn {
+            background: rgba(52, 152, 219, 0.2);
+            border: 1px solid rgba(52, 152, 219, 0.4);
+            border-radius: 6px;
+            padding: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            color: #3498db;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+        }
+
+        .pin-btn:hover, .close-btn:hover {
+            background: rgba(52, 152, 219, 0.3);
+            border-color: #3498db;
+        }
+
+        .pin-btn.pinned {
+            background: rgba(46, 204, 113, 0.2);
+            border-color: #2ecc71;
+            color: #2ecc71;
+        }
+
+        .close-btn {
+            background: rgba(231, 76, 60, 0.2);
+            border-color: rgba(231, 76, 60, 0.4);
+            color: #e74c3c;
+        }
+
+        .close-btn:hover {
+            background: rgba(231, 76, 60, 0.3);
+            border-color: #e74c3c;
+            transform: scale(1.05);
+        }
+
+        .btn-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Main content area */
+        .content {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 20px;
+            /* Single scrollbar for main content */
+        }
+
+        /* Status indicators */
+        .status-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .status-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .status-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(52, 152, 219, 0.3);
+        }
+
+        .status-card h3 {
+            font-size: 11px;
+            color: #bdc3c7;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #ecf0f1;
+        }
+
+        .indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .indicator.online { background: #2ecc71; animation: pulse 2s infinite; }
+        .indicator.offline { background: #e74c3c; }
+        .indicator.processing { background: #f39c12; animation: pulse 1s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Live stats section */
+        .live-stats {
+            background: rgba(46, 204, 113, 0.1);
+            border: 1px solid rgba(46, 204, 113, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .live-stats h2 {
+            font-size: 14px;
+            color: #2ecc71;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .stat-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            padding: 8px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 10px;
+            color: #bdc3c7;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            font-size: 13px;
+            font-weight: 600;
+            color: #ecf0f1;
+        }
+
+        /* Memory layers */
+        .memory-layers {
+            margin-bottom: 20px;
+        }
+
+        .memory-layers h2 {
+            font-size: 14px;
+            color: #3498db;
+            margin-bottom: 12px;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .layer {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s ease;
+        }
+
+        .layer:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .layer.dom { border-left: 4px solid #e74c3c; }
+        .layer.hot { border-left: 4px solid #f39c12; }
+        .layer.archive { border-left: 4px solid #9b59b6; }
+
+        .layer-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .layer-icon {
+            width: 20px;
+            height: 20px;
+        }
+
+        .layer-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #ecf0f1;
+        }
+
+        .layer-stats {
+            text-align: right;
+        }
+
+        .layer-count {
+            font-size: 14px;
+            font-weight: 600;
+            color: #ecf0f1;
+            margin-bottom: 2px;
+        }
+
+        .layer-size {
+            font-size: 11px;
+            color: #bdc3c7;
+        }
+
+        /* Activity feed */
+        .activity-section {
+            margin-bottom: 20px;
+        }
+
+        .activity-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .activity-header h2 {
+            font-size: 14px;
+            color: #3498db;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .resize-handle {
+            width: 20px;
+            height: 20px;
+            background: rgba(52, 152, 219, 0.2);
+            border: 1px solid rgba(52, 152, 219, 0.4);
+            border-radius: 4px;
+            cursor: ns-resize;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s ease;
+        }
+
+        .resize-handle:hover {
+            background: rgba(52, 152, 219, 0.3);
+        }
+
+        .resize-icon {
+            width: 12px;
+            height: 12px;
+            color: #3498db;
+        }
+
+        .activity-feed {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            height: 150px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 10px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 11px;
+            line-height: 1.4;
+            /* Prevent double scrollbar */
+            max-height: 150px;
+        }
+
+        /* Custom scrollbar - dark theme */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #3498db;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #2980b9;
+        }
+
+        .activity-entry {
+            margin-bottom: 4px;
+            padding: 2px 0;
+        }
+
+        .activity-entry.info { color: #3498db; }
+        .activity-entry.success { color: #2ecc71; }
+        .activity-entry.warning { color: #f39c12; }
+        .activity-entry.error { color: #e74c3c; }
+
+        /* Controls */
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            padding: 10px 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .btn.primary {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+        }
+
+        .btn.secondary {
+            background: linear-gradient(135deg, #95a5a6, #7f8c8d);
+            color: white;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        .btn-icon {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Quick actions */
+        .quick-actions {
+            margin-bottom: 15px;
+        }
+
+        .quick-actions h3 {
+            font-size: 13px;
+            color: #3498db;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .action-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .action-btn {
+            padding: 8px 10px;
+            background: rgba(52, 152, 219, 0.1);
+            border: 1px solid rgba(52, 152, 219, 0.3);
+            border-radius: 6px;
+            color: #ecf0f1;
+            font-size: 11px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .action-btn:hover {
+            background: rgba(52, 152, 219, 0.2);
+            border-color: #3498db;
+            transform: translateY(-1px);
+        }
+
+        .action-icon {
+            width: 14px;
+            height: 14px;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            color: #7f8c8d;
+            font-size: 9px;
+            padding: 5px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            flex-shrink: 0;
+        }
+
+        /* Notification system */
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(46, 204, 113, 0.9);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 1000;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.error {
+            background: rgba(231, 76, 60, 0.9);
+        }
+
+        /* Pinned state styles - removed for simplicity */
+
+        /* Resize handle for popup */
+        .popup-resize-handle {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 15px;
+            height: 15px;
+            cursor: nw-resize;
+            background: linear-gradient(135deg, transparent 50%, rgba(52, 152, 219, 0.5) 50%);
+            border-radius: 0 0 4px 0;
+            z-index: 1000;
+        }
+
+        .popup-resize-handle:hover {
+            background: linear-gradient(135deg, transparent 50%, rgba(52, 152, 219, 0.8) 50%);
+        }
+
+        /* Responsive adjustments */
+        @media (max-height: 700px) {
+            body {
+                max-height: 95vh;
+            }
+            
+            .activity-feed {
+                height: 120px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <div class="header-left">
+            <div class="amp-icon-container" id="ampIconContainer">
+                <svg class="amp-icon" id="ampIcon" width="40" height="40" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                            <stop offset="0%" stop-color="red"/>
+                            <stop offset="14%" stop-color="orange"/>
+                            <stop offset="28%" stop-color="yellow"/>
+                            <stop offset="42%" stop-color="lime"/>
+                            <stop offset="57%" stop-color="cyan"/>
+                            <stop offset="71%" stop-color="blue"/>
+                            <stop offset="85%" stop-color="magenta"/>
+                            <stop offset="100%" stop-color="red"/>
+                            <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="6s" repeatCount="indefinite"/>
+                        </linearGradient>
+                    </defs>
+                    <g transform="scale(1.5)">
+                        <g transform="scale(0.26666667)">
+                            <rect x="27.4" y="-56.7" width="114.9" height="114.9" rx="57.4" fill="#030303" transform="rotate(44.5)"/>
+                            <path fill-rule="evenodd" clip-rule="evenodd" d="m 54.8,65.4 c 1.6,0.1 3.3,0.1 4.9,0.2 l 1.8,0.1 c 1.3,0.1 2.6,0.1 3.9,0.2 l 0.5,0 c 16.8,0.6 35.4,0.1 49.5,-14.2 l -8,-7.9 c -2.8,2.9 -5.9,5 -9.3,6.6 L 69.1,21.6 c 1.6,-3.3 3.7,-6.5 6.5,-9.3 L 67.6,4.4 C 53.5,18.7 53.2,37.3 54,54.1 37.2,53.5 18.6,54 4.5,68.3 l 8,7.9 c 2.8,-2.9 5.9,-5 9.3,-6.6 L 50.9,98.4 c -1.6,3.3 -3.7,6.5 -6.5,9.3 l 8,7.9 C 63.4,104.4 66,90.6 66.2,77.1 64.6,77.1 63,77 61.5,76.9 l -2.2,-0.1 c -1.5,-0.1 -2.9,-0.1 -4.2,-0.2 0,3.2 -0.2,6.4 -0.6,9.3 L 34.1,66 C 40.4,65.1 47.3,65.1 54.7,65.4 Z M 65.6,34 85.9,54 C 79.6,55 72.7,54.9 65.3,54.6 64.9,47.2 64.8,40.3 65.6,34 Z" fill="#ffffff"/>
+                            <circle cx="60" cy="60" fill="none" stroke="url(#gradient)" stroke-width="3.75" r="58.125">
+                                <animate attributeName="stroke-dashoffset" from="0" to="502" dur="4s" repeatCount="indefinite"/>
+                            </circle>
+                        </g>
+                    </g>
+                </svg>
+            </div>
+            <div class="title-section">
+                <h1>A.M.P</h1>
+                <div class="subtitle">Auto Memory Persistence</div>
+            </div>
+        </div>
+        
+        <div class="header-controls">
+            <!-- Single status indicator -->
+            <div class="header-status">
+                <span class="indicator offline" id="main-indicator"></span>
+                <span class="status-text" id="main-status">Offline</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Main content -->
+    <div class="content">
+        <!-- Status indicators - keep only Provider and Processing -->
+        <div class="status-grid">
+            <div class="status-card">
+                <h3>
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/>
+                    </svg>
+                    Provider
+                </h3>
+                <div class="status-value" id="current-provider">Detecting...</div>
+            </div>
+            <div class="status-card">
+                <h3>
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M13,2.05V4.05C17.39,4.59 20.5,8.58 19.96,12.97C19.5,16.61 16.64,19.5 13,19.93V21.93C18.5,21.38 22.5,16.5 21.95,11C21.5,6.25 17.73,2.5 13,2.03V2.05M5.67,19.74C7.18,21 9.04,21.79 11,22V20C9.58,19.82 8.23,19.25 7.1,18.37L5.67,19.74M7.1,5.74C8.22,4.84 9.57,4.26 11,4.06V2.06C9.05,2.25 7.19,3 5.67,4.26L7.1,5.74M5.69,7.1L4.26,5.67C3,7.19 2.25,9.04 2.05,11H4.05C4.24,9.58 4.8,8.23 5.69,7.1M4.06,13H2.06C2.26,14.96 3.03,16.81 4.27,18.33L5.69,16.9C4.81,15.77 4.24,14.42 4.06,13M10,16.5L16,10.5L14.59,9.09L10,13.67L7.91,11.59L6.5,13L10,16.5Z"/>
+                    </svg>
+                    Processing
+                </h3>
+                <div class="status-value" id="processing-status">Idle</div>
+            </div>
+        </div>
+
+        <!-- Activity feed -->
+        <div class="activity-section">
+            <div class="activity-header">
+                <h2>
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M22,21H2V3H4V19H6V17H10V19H12V16H16V19H18V17H22V21M16,8H18V15H16V8M12,10H14V15H12V10M8,5H10V15H8V5M4,10H6V15H4V10Z"/>
+                    </svg>
+                    Live Activity Feed
+                </h2>
+            </div>
+            <div class="activity-feed" id="activityFeed">
+                <!-- Activity entries will be added dynamically -->
+            </div>
+        </div>
+
+        <!-- Live stats -->
+        <div class="live-stats">
+            <h2>
+                <span class="indicator processing"></span>
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6M12,8A4,4 0 0,0 8,12A4,4 0 0,0 12,16A4,4 0 0,0 16,12A4,4 0 0,0 12,8Z"/>
+                </svg>
+                Live Memory Stats
+            </h2>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-label">Total Memory</div>
+                    <div class="stat-value" id="total-bytes">0 B</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Messages/sec</div>
+                    <div class="stat-value" id="message-rate">0</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Session Time</div>
+                    <div class="stat-value" id="session-time">0:00</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Growth Rate</div>
+                    <div class="stat-value" id="growth-rate">+0 B/min</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Memory layers -->
+        <div class="memory-layers">
+            <h2>
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M17,3H7A2,2 0 0,0 5,5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V5A2,2 0 0,0 17,3M7,19V5H17V19H7Z"/>
+                </svg>
+                Memory Layers
+            </h2>
+            <div class="layer dom">
+                <div class="layer-info">
+                    <svg class="layer-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6M12,8A4,4 0 0,0 8,12A4,4 0 0,0 12,16A4,4 0 0,0 16,12A4,4 0 0,0 12,8Z"/>
+                    </svg>
+                    <span class="layer-name">DOM Layer</span>
+                </div>
+                <div class="layer-stats">
+                    <div class="layer-count" id="dom-count">0</div>
+                    <div class="layer-size" id="dom-bytes">0 B</div>
+                </div>
+            </div>
+            <div class="layer hot">
+                <div class="layer-info">
+                    <svg class="layer-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M7,2V13H10V22L17,10H13L17,2H7Z"/>
+                    </svg>
+                    <span class="layer-name">Hot Buffer</span>
+                </div>
+                <div class="layer-stats">
+                    <div class="layer-count" id="hot-count">0</div>
+                    <div class="layer-size" id="hot-bytes">0 B</div>
+                </div>
+            </div>
+            <div class="layer archive">
+                <div class="layer-info">
+                    <svg class="layer-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M20,6H16V4A2,2 0 0,0 14,2H10A2,2 0 0,0 8,4V6H4A2,2 0 0,0 2,8V19A2,2 0 0,0 4,21H20A2,2 0 0,0 22,19V8A2,2 0 0,0 20,6M10,4H14V6H10V4Z"/>
+                    </svg>
+                    <span class="layer-name">Archive</span>
+                </div>
+                <div class="layer-stats">
+                    <div class="layer-count" id="archive-count">0</div>
+                    <div class="layer-size" id="archive-bytes">0 B</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls">
+            <button class="btn primary" id="refresh-btn">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M17.65,6.35C16.2,4.9 14.21,4 12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20C15.73,20 18.84,17.45 19.73,14H17.65C16.83,16.33 14.61,18 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6C13.66,6 15.14,6.69 16.22,7.78L13,11H20V4L17.65,6.35Z"/>
+                </svg>
+                Refresh
+            </button>
+            <button class="btn secondary" id="cascade-btn">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6M12,8A4,4 0 0,0 8,12A4,4 0 0,0 12,16A4,4 0 0,0 16,12A4,4 0 0,0 12,8Z"/>
+                </svg>
+                Cascade
+            </button>
+            <button class="btn secondary" id="inject-btn">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7.41,15.41L12,10.83L16.59,15.41L18,14L12,8L6,14L7.41,15.41Z"/>
+                </svg>
+                Inject
+            </button>
+            <button class="btn secondary" id="export-btn">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2M18,20H6V4H13V9H18V20Z"/>
+                </svg>
+                Export
+            </button>
+        </div>
+
+        <!-- Quick actions -->
+        <div class="quick-actions">
+            <h3>
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4M12,6A6,6 0 0,1 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12A6,6 0 0,1 12,6M12,8A4,4 0 0,0 8,12A4,4 0 0,0 12,16A4,4 0 0,0 16,12A4,4 0 0,0 12,8Z"/>
+                </svg>
+                Quick Actions
+            </h3>
+            <div class="action-grid">
+                <div class="action-btn" id="open-window-btn">
+                    <svg class="action-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M4,4H20V16H5.17L4,17.17V4M4,2A2,2 0 0,0 2,4V20L6,16H20A2,2 0 0,0 22,14V4A2,2 0 0,0 20,2H4Z"/>
+                    </svg>
+                    Open Window
+                </div>
+                <div class="action-btn" id="send-all-btn">
+                    <svg class="action-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M2.01,21L23,12L2.01,3L2,10L17,12L2,14L2.01,21Z"/>
+                    </svg>
+                    Send All to GUI
+                </div>
+                <div class="action-btn" id="clear-btn">
+                    <svg class="action-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"/>
+                    </svg>
+                    Clear
+                </div>
+                <div class="action-btn" id="stats-btn">
+                    <svg class="action-icon" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M22,21H2V3H4V19H6V17H10V19H12V16H16V19H18V17H22V21M16,8H18V15H16V8M12,10H14V15H12V10M8,5H10V15H8V5M4,10H6V15H4V10Z"/>
+                    </svg>
+                    Stats
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        © 2025 AMPIQ - AMP Architecture v2.0
+    </div>
+
+    <!-- Notification container -->
+    <div id="notificationContainer"></div>
+
+
+
+    <!-- Activity log -->
+    <div class="activity-log" id="activityLog"></div>
+
+    <!-- Resize handle - removed for full window height -->
+    <!-- <div class="popup-resize-handle" id="popupResizeHandle" title="Resize popup"></div> -->
+
+    <script src="dropdown.js"></script>
+</body>
+</html>

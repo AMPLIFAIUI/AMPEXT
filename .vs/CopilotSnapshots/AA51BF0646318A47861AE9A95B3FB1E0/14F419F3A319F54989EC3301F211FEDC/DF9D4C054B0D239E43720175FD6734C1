@@ -1,0 +1,594 @@
+﻿// © 2025 AMPIQ All rights reserved.
+// Popup script for AMP Memory Extension - Professional UI
+// Version: 2.0.1 - Cache busted
+
+let activityFeedHeight = 150;
+let updateInterval;
+let sessionStartTime = Date.now();
+
+document.addEventListener('DOMContentLoaded', async () => {
+    await initializePopup();
+    setupEventListeners();
+    setupPinning();
+    setupActivityLog();
+    setupResizableActivityFeed();
+    setupPopupResize();
+    startPeriodicUpdates();
+    initializeIconAnimations();
+    
+    // Listen for connection status updates from background
+    if (chrome && chrome.runtime && chrome.runtime.onMessage) {
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+            if (message.type === 'connectionStatusUpdate') {
+                updateConnectionIndicator(message.connected);
+            }
+        });
+    }
+});
+
+// StatsManager: single source of truth for stats
+class StatsManager {
+    constructor() {
+        this.stats = {
+            domChunks: 0,
+            hotBufferChunks: 0,
+            archivedChunks: 0,
+            totalChunks: 0,
+            hotMemorySize: 0,
+            lastUpdated: Date.now()
+        };
+        this.listeners = [];
+    }
+    updateStats(newStats) {
+        this.stats = { ...this.stats, ...newStats, lastUpdated: Date.now() };
+        this.notifyListeners();
+    }
+    addListener(callback) {
+        this.listeners.push(callback);
+    }
+    notifyListeners() {
+        this.listeners.forEach(cb => cb(this.stats));
+    }
+}
+const statsManager = new StatsManager();
+
+// Initialize popup with enhanced functionality
+async function initializePopup() {
+    try {
+        // Detect if we're in a popup or standalone window
+        const isStandaloneWindow = window.location.pathname.includes('amp-ui.html');
+        
+        // Setup popup-specific features only for popup
+        if (!isStandaloneWindow) {
+            setupPinning();
+            setupPopupResize();
+        }
+        
+        // Setup resizable activity feed for both contexts
+        setupResizableActivityFeed();
+        
+        // Setup event listeners
+        setupEventListeners();
+        
+        // Check current tab and provider
+        await updateProviderStatus();
+        
+        // Get memory statistics
+        await updateMemoryStats();
+        
+        // Check AMP server status
+        await checkAmpServerStatus();
+        
+        // Initialize activity feed
+        addActivityEntry('info', 'AMP Memory initialized');
+        addActivityEntry('success', 'Memory pool loaded successfully');
+        
+        // Start periodic updates
+        startPeriodicUpdates();
+        
+        console.log('AMP Popup initialized');
+    } catch (error) {
+        console.error('Failed to initialize popup:', error);
+        addActivityEntry('error', 'Initialization failed: ' + error.message);
+    }
+}
+
+// Setup pinning functionality (simplified - just for visual feedback)
+function setupPinning() {
+    const pinBtn = document.getElementById('pinBtn');
+    const ampIconContainer = document.getElementById('ampIconContainer');
+    if (pinBtn) {
+        pinBtn.addEventListener('click', () => {
+            // Just show a notification that standalone window is available
+            showNotification('Use "Open Window" button for persistent view', 'info');
+            addActivityEntry('info', 'Pin button clicked - use Open Window for persistent view');
+        });
+    }
+    // Remove pin state loading since we're not using it
+}
+
+// Setup activity log functionality
+function setupActivityLog() {
+    const activityLog = document.getElementById('activityLog');
+    
+    // Only setup if element exists
+    if (!activityLog) {
+        console.log('Activity log element not found, skipping setup');
+        return;
+    }
+    
+    // Add activity log functionality
+    function addActivityLogEntry(msg) {
+        if (!activityLog) return;
+        const now = new Date();
+        const time = now.toLocaleTimeString();
+        const entry = document.createElement('div');
+        entry.textContent = `[${time}] ${msg}`;
+        activityLog.insertBefore(entry, activityLog.firstChild);
+        while (activityLog.children.length > 30) {
+            activityLog.removeChild(activityLog.lastChild);
+        }
+    }
+    
+    // Expose for use by other functions
+    window.addActivityLogEntry = addActivityLogEntry;
+}
+
+// Setup resizable activity feed
+function setupResizableActivityFeed() {
+    const resizeHandle = document.getElementById('resizeHandle');
+    const activityFeed = document.getElementById('activityFeed');
+    
+    // Only setup if both elements exist
+    if (!resizeHandle || !activityFeed) {
+        console.log('Resize elements not found, skipping setup');
+        return;
+    }
+    
+    let isResizing = false;
+    let startY = 0;
+    let startHeight = 0;
+    
+    resizeHandle.addEventListener('mousedown', (e) => {
+        isResizing = true;
+        startY = e.clientY;
+        startHeight = activityFeed.offsetHeight;
+        document.body.style.cursor = 'ns-resize';
+        e.preventDefault();
+    });
+    
+    document.addEventListener('mousemove', (e) => {
+        if (!isResizing) return;
+        
+        const deltaY = e.clientY - startY;
+        const newHeight = Math.max(100, Math.min(400, startHeight + deltaY));
+        activityFeed.style.height = newHeight + 'px';
+        activityFeedHeight = newHeight;
+    });
+    
+    document.addEventListener('mouseup', () => {
+        if (isResizing) {
+            isResizing = false;
+            document.body.style.cursor = 'default';
+            // Save height preference
+            chrome.storage.local.set({ 'amp_activity_feed_height': activityFeedHeight });
+        }
+    });
+    
+    // Load saved height
+    chrome.storage.local.get(['amp_activity_feed_height'], (result) => {
+        if (result.amp_activity_feed_height) {
+            activityFeed.style.height = result.amp_activity_feed_height + 'px';
+            activityFeedHeight = result.amp_activity_feed_height;
+        }
+    });
+}
+
+// Setup popup resize functionality (vertical only) - disabled for full height
+function setupPopupResize() {
+    const resizeHandle = document.getElementById('popupResizeHandle');
+    
+    // Only setup if element exists
+    if (!resizeHandle) {
+        console.log('Popup resize handle not found, skipping setup');
+        return;
+    }
+    
+    // Remove resize handle since we're using full window height
+    resizeHandle.style.display = 'none';
+    
+    // Don't override CSS height settings - let CSS handle full height
+    chrome.storage.local.get(['amp_popup_height'], (result) => {
+        // Ignore saved height when using full window height
+        console.log('Using full window height (100vh) - ignoring saved height preference');
+    });
+}
+
+// Add entry to activity feed
+function addActivityEntry(type, message) {
+    const activityFeed = document.getElementById('activityFeed');
+    const timestamp = new Date().toLocaleTimeString();
+    const entry = document.createElement('div');
+    entry.className = `activity-entry ${type}`;
+    entry.textContent = `[${timestamp}] ${message}`;
+    
+    activityFeed.appendChild(entry);
+    
+    // Auto-scroll to bottom
+    activityFeed.scrollTop = activityFeed.scrollHeight;
+    
+    // Limit entries to prevent memory issues
+    const entries = activityFeed.querySelectorAll('.activity-entry');
+    if (entries.length > 50) {
+        entries[0].remove();
+    }
+}
+
+// Enhanced provider status update
+async function updateProviderStatus() {
+    try {
+        // Helper function to safely update element text
+        function safeUpdateText(elementId, text) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = text;
+            }
+        }
+
+        // Detect if we're in a popup or standalone window
+        const isStandaloneWindow = window.location.pathname.includes('amp-ui.html');
+        
+        if (isStandaloneWindow) {
+            // For standalone window, show a generic status
+            safeUpdateText('current-provider', 'Standalone Mode');
+            return;
+        }
+        
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        const url = tab.url;
+        
+        let provider = 'Unknown';
+        if (url.includes('chat.openai.com')) {
+            provider = 'ChatGPT';
+        } else if (url.includes('claude.ai')) {
+            provider = 'Claude';
+        } else if (url.includes('gemini.google.com') || url.includes('bard.google.com')) {
+            provider = 'Gemini';
+        } else if (url.includes('blackbox.ai')) {
+            provider = 'Blackbox';
+        } else if (url.includes('perplexity.ai')) {
+            provider = 'Perplexity';
+        } else if (url.includes('poe.com')) {
+            provider = 'Poe';
+        } else if (url.includes('character.ai')) {
+            provider = 'Character.ai';
+        } else if (url.includes('you.com')) {
+            provider = 'You.com';
+        } else if (url.includes('127.0.0.1:5500/client/manual-feeder.html')) {
+            provider = 'Manual Feeder (Local)';
+        }
+        
+        safeUpdateText('current-provider', provider);
+        addActivityEntry('info', `Provider detected: ${provider}`);
+        if (provider !== 'Unknown' && provider !== 'Error') {
+            setIconState('active');
+        } else {
+            setIconState('idle');
+        }
+    } catch (error) {
+        const providerElement = document.getElementById('current-provider');
+        if (providerElement) {
+            providerElement.textContent = 'Error';
+            providerElement.classList.add('error');
+        }
+        addActivityEntry('error', 'Provider detection failed: ' + (error && error.message ? error.message : error));
+        showNotification('Provider detection failed', 'error');
+        console.error('Failed to update provider status:', error);
+    }
+}
+
+// Enhanced memory stats update with live data
+async function updateMemoryStats() {
+    try {
+        chrome.runtime.sendMessage({ action: 'getMemoryStats' }, (response) => {
+            if (response && response.success && response.stats) {
+                statsManager.updateStats(response.stats);
+            } else {
+                console.error('Failed to get memory stats:', response.error);
+            }
+        });
+    } catch (error) {
+        console.error('Failed to update memory stats:', error);
+    }
+}
+
+// Enhanced server status check
+// Function to update connection indicator
+function updateConnectionIndicator(connected) {
+    const desktopStatus = document.getElementById('desktop-status');
+    if (desktopStatus) {
+        if (connected) {
+            desktopStatus.textContent = 'Connected';
+            const indicator = desktopStatus.parentElement.querySelector('.indicator');
+            if (indicator) {
+                indicator.className = 'indicator online';
+            }
+        } else {
+            desktopStatus.textContent = 'Disconnected';
+            const indicator = desktopStatus.parentElement.querySelector('.indicator');
+            if (indicator) {
+                indicator.className = 'indicator offline';
+            }
+        }
+    }
+}
+
+async function checkAmpServerStatus() {
+    try {
+        // Test native messaging connection
+        const response = await chrome.runtime.sendMessage({ action: 'pingNativeHost' });
+        
+        updateConnectionIndicator(response && response.success && response.connected);
+        
+        if (response && response.success && response.connected) {
+            addActivityEntry('success', 'Native messaging connected');
+        } else {
+            addActivityEntry('warning', 'Native messaging disconnected');
+        }
+    } catch (error) {
+        // Native messaging not available - this is normal if not properly installed
+        updateConnectionIndicator(false);
+        addActivityEntry('info', 'Native messaging not available (run install-native-messaging.js)');
+    }
+}
+
+// Enhanced event listeners
+function setupEventListeners() {
+    // Helper function to safely add event listener
+    function safeAddEventListener(elementId, event, handler) {
+        const element = document.getElementById(elementId);
+        if (element) {
+            element.addEventListener(event, handler);
+        } else {
+            console.warn(`Element with id '${elementId}' not found, skipping event listener`);
+        }
+    }
+    
+
+    // Detect if we're in a popup or standalone window
+    const isStandaloneWindow = window.location.pathname.includes('amp-ui.html');
+    
+    // Close button - handle differently for popup vs standalone
+    // (No closeBtn in HTML, so skip this to avoid null errors)
+    // const closeBtn = document.getElementById('closeBtn');
+    // if (closeBtn) {
+    //     closeBtn.addEventListener('click', () => {
+    //         if (isStandaloneWindow) {
+    //             // For standalone window, just close it
+    //             window.close();
+    //         } else {
+    //             // For popup, close it
+    //             window.close();
+    //         }
+    //     });
+    // }
+
+    // Main control buttons
+    safeAddEventListener('refresh-btn', 'click', async () => {
+        addActivityEntry('info', 'Manual refresh triggered');
+        await updateMemoryStats();
+        await updateProviderStatus();
+        await checkAmpServerStatus();
+        showNotification('🔄 Memory refreshed', 'success');
+    });
+
+    safeAddEventListener('cascade-btn', 'click', async () => {
+        try {
+            addActivityEntry('info', 'Memory cascade triggered');
+            await chrome.runtime.sendMessage({ action: 'triggerCascade' });
+            await updateMemoryStats();
+            showNotification('💧 Memory cascade triggered', 'success');
+            addActivityEntry('success', 'Memory cascade completed');
+        } catch (error) {
+            showNotification('❌ Cascade failed', 'error');
+            addActivityEntry('error', 'Cascade failed: ' + error.message);
+            console.error('Cascade error:', error);
+        }
+    });
+
+    safeAddEventListener('inject-btn', 'click', async () => {
+        try {
+            addActivityEntry('info', 'Reverse injection triggered');
+            await chrome.runtime.sendMessage({ action: 'triggerInject' });
+            await updateMemoryStats();
+            showNotification('⬆️ Reverse injection triggered', 'success');
+            addActivityEntry('success', 'Reverse injection completed');
+        } catch (error) {
+            showNotification('❌ Injection failed', 'error');
+            addActivityEntry('error', 'Injection failed: ' + error.message);
+            console.error('Injection error:', error);
+        }
+    });
+
+    safeAddEventListener('export-btn', 'click', async () => {
+        try {
+            addActivityEntry('info', 'Memory export started');
+            const response = await chrome.runtime.sendMessage({ action: 'exportMemory' });
+            if (response.success) {
+                // Create download
+                const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                
+                await chrome.downloads.download({
+                    url: url,
+                    filename: `amp-memory-${new Date().toISOString().split('T')[0]}.json`
+                });
+                
+                showNotification('💾 Memory exported', 'success');
+                addActivityEntry('success', 'Memory exported successfully');
+            }
+        } catch (error) {
+            showNotification('❌ Export failed', 'error');
+            addActivityEntry('error', 'Export failed: ' + error.message);
+            console.error('Export error:', error);
+        }
+    });
+
+    // Quick action buttons
+    const openWindowBtn = document.getElementById('open-window-btn');
+    if (openWindowBtn) {
+        openWindowBtn.addEventListener('click', async () => {
+            // Only allow opening window from popup, not from standalone window
+            if (isStandaloneWindow) {
+                showNotification('ℹ️ Already in standalone window', 'info');
+                addActivityEntry('info', 'Already in standalone window mode');
+                return;
+            }
+            
+            try {
+                addActivityEntry('info', 'Opening standalone window...');
+                showNotification('🔄 Opening window...', 'info');
+                
+                // Open amp-ui.html directly
+                const ampUrl = chrome.runtime.getURL('amp-ui.html');
+                const width = 600;
+                const height = 800;
+                const left = (screen.width - width) / 2;
+                const top = (screen.height - height) / 2;
+                
+                const newWindow = window.open(
+                    ampUrl,
+                    'amp-standalone-window',
+                    `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no,location=no,toolbar=no,menubar=no,titlebar=no,directories=no,personalbar=no`
+                );
+                
+                if (newWindow) {
+                    showNotification('✅ Window opened!', 'success');
+                    addActivityEntry('success', 'Standalone window opened successfully');
+                    setTimeout(() => window.close(), 1000); // Close popup after short delay
+                } else {
+                    showNotification('❌ Window blocked by browser', 'error');
+                    addActivityEntry('error', 'Failed to open window - popup blocked');
+                }
+            } catch (error) {
+                showNotification('❌ Window open error', 'error');
+                addActivityEntry('error', 'Window open error: ' + error.message);
+                console.error('Open window error:', error);
+            }
+        });
+    }
+
+    safeAddEventListener('clear-btn', 'click', async () => {
+        if (confirm('Clear all memory? This cannot be undone.')) {
+            try {
+                addActivityEntry('warning', 'Memory clear requested');
+                await chrome.runtime.sendMessage({ action: 'clearMemory' });
+                await updateMemoryStats();
+                showNotification('🗑️ Memory cleared', 'success');
+                addActivityEntry('success', 'Memory cleared successfully');
+            } catch (error) {
+                showNotification('❌ Clear failed', 'error');
+                addActivityEntry('error', 'Memory clear failed: ' + error.message);
+                console.error('Clear error:', error);
+            }
+        }
+    });
+
+    safeAddEventListener('stats-btn', 'click', async () => {
+        try {
+            addActivityEntry('info', 'Detailed stats requested');
+            const response = await chrome.runtime.sendMessage({ action: 'getDetailedStats' });
+            if (response.success) {
+                showStatsModal(response.stats);
+                addActivityEntry('success', 'Detailed stats displayed');
+            }
+        } catch (error) {
+            showNotification('❌ Stats failed', 'error');
+            addActivityEntry('error', 'Stats failed: ' + error.message);
+            console.error('Stats error:', error);
+        }
+    });
+
+    safeAddEventListener('send-all-btn', 'click', async () => {
+        try {
+            addActivityEntry('info', 'Sending all memory to desktop...');
+            showNotification('🔄 Sending to desktop...', 'info');
+            
+            const response = await chrome.runtime.sendMessage({ action: 'sendAllToGUI' });
+            
+            if (response && response.success) {
+                showNotification('✅ Sent to desktop!', 'success');
+                addActivityEntry('success', 'All memory sent to desktop successfully');
+            } else {
+                showNotification('❌ Send failed', 'error');
+                addActivityEntry('error', 'Failed to send memory to desktop');
+                console.error('Send to desktop failed:', response);
+            }
+        } catch (error) {
+            showNotification('❌ Send error', 'error');
+            addActivityEntry('error', 'Send error: ' + error.message);
+            console.error('Send to desktop error:', error);
+        }
+    });
+}
+
+// Enhanced periodic updates
+function startPeriodicUpdates() {
+    // Update every 1 second for more responsive UI
+    updateInterval = setInterval(async () => {
+        try {
+            await updateMemoryStats();
+            await updateProviderStatus();
+            
+            // Update desktop status less frequently
+            if (Math.random() < 0.2) { // 20% chance each update
+                await checkAmpServerStatus();
+            }
+        } catch (error) {
+            console.error('Periodic update error:', error);
+        }
+    }, 1000);
+    
+    // Listen for stats updates from background script
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.action === 'statsUpdate' && message.stats) {
+            statsManager.updateStats(message.stats);
+        }
+    });
+}
+
+// Real-time stats update every 10 seconds
+setInterval(() => {
+    chrome.runtime.sendMessage({ action: 'getMemoryStats' }, (response) => {
+        if (response && response.success && response.stats) {
+            statsManager.updateStats(response.stats);
+        }
+    });
+}, 10000);
+
+// Function to update stats from background broadcast
+function updateMemoryStatsFromBroadcast(stats) {
+    statsManager.updateStats(stats);
+    try {
+        // Helper function to safely update element text
+        function safeUpdateText(elementId, text) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = text;
+                element.classList.remove('error');
+            }
+        }
+        
+        // Update all stat fields with live values or fallback to 0
+        safeUpdateText('dom-count', stats.domChunks ?? 0);
+        safeUpdateText('hot-count', stats.hotBufferChunks ?? 0);
+        safeUpdateText('archive-count', stats.archivedChunks ?? 0);
+        safeUpdateText('dom-bytes', formatBytes(stats.domSize ?? 0));
+        safeUpdateText('hot-bytes', formatBytes(stats.hotBufferSize ?? 0));
+        safeUpdateText('archive-bytes', formatBytes(stats.archiveSize ?? 0));
+        safeUpdateText('total-bytes', formatBytes((stats.domSize ?? 0) + (stats.hotBufferSize ?? 0) + (stats.archiveSize ?? 0)));
+        safeUpdateText('message-rate', stats.messageRate ?? 0);
+        safeUpdateText('growth-rate', stats.growthRate ? `+${formatBytes(stats.growthRate)}/min` : '+0 B/min');
+        
+        // Update processing status and icon state
+        const processingStatus = document.getElementById('processing

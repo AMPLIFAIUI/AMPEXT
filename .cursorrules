@@ -1,0 +1,80 @@
+# DEVELOPMENT RULES - READ BEFORE ANYTHING
+
+## 1. LOOK AT THE BIGGER PICTURE
+- **UNDERSTAND THE WHOLE PROJECT** before touching anything
+- **READ THE ENTIRE FILE** - not just headings or names
+- **SEE HOW THINGS CONNECT** - understand the relationships
+- **DON'T SKIM** - read every line if needed
+- **ASK QUESTIONS** if you don't understand something
+
+## 2. DON'T RUSH - TAKE YOUR TIME
+- **SLOW DOWN** - rushing makes things worse
+- **READ COMPLETELY** before making any decisions
+- **UNDERSTAND THE CONTEXT** - why does this exist?
+- **THINK THROUGH THE CONSEQUENCES** of any change
+- **DON'T MAKE QUICK FIXES** - understand the real problem first
+
+## 3. LISTEN AND LOOK - DON'T ASSUME
+- **READ TERMINAL OUTPUT COMPLETELY** - every line
+- **LOOK AT ACTUAL ERROR MESSAGES** - not what you think they mean
+- **LISTEN TO USER FEEDBACK** - they know what's wrong
+- **DON'T ASSUME SUCCESS** - verify everything works
+- **DON'T ASSUME FAILURE** - check the actual results
+
+## 4. VERIFY EVERYTHING
+- **CHECK RESULTS** after any change
+- **READ THE OUTPUT** - terminal, console, whatever
+- **TEST THE FUNCTIONALITY** - don't just assume it works
+- **VERIFY THE FLOW** - trace the data through the system
+- **CONFIRM SUCCESS** before moving on
+
+## 5. DON'T DEVIATE - DO IT PROPERLY
+- **STICK TO THE PLAN** - don't create simplified versions
+- **DON'T MAKE TEST VERSIONS** - fix the real problem
+- **DO IT RIGHT THE FIRST TIME** - no shortcuts
+- **FOLLOW THE ARCHITECTURE** - don't invent new approaches
+- **USE THE EXISTING SYSTEM** - don't rebuild everything
+
+## 6. READ ENTIRE FILES
+- **READ FROM START TO FINISH** - every line
+- **UNDERSTAND THE PURPOSE** of each function
+- **SEE THE PATTERNS** in the code
+- **KNOW THE DATA FLOW** through the system
+- **UNDERSTAND THE RELATIONSHIPS** between files
+
+## 7. BEFORE ANY CHANGE
+1. **READ THE ARCHITECTURE FILE** completely
+2. **UNDERSTAND THE CURRENT SYSTEM** 
+3. **IDENTIFY THE ACTUAL PROBLEM** (not assumed)
+4. **PLAN THE FIX** step by step
+5. **IMPLEMENT ONE CHANGE** at a time
+6. **VERIFY THE RESULT** completely
+7. **ONLY THEN** move to the next step
+
+## 8. SUCCESS CRITERIA
+- **TERMINAL SHOWS SUCCESS** - not just no errors
+- **FUNCTIONALITY WORKS** - not just compiles
+- **USER CONFIRMS** it's working
+- **NO REGRESSIONS** - didn't break other things
+- **UNDERSTANDABLE** - can explain what was fixed
+
+## 9. WHEN IN DOUBT
+- **READ MORE** - get more information
+- **ASK QUESTIONS** - don't guess
+- **GO SLOWER** - take more time
+- **VERIFY MORE** - check everything
+- **DON'T RUSH** - better to be thorough than fast
+
+## 10. REMEMBER
+- **YOU'RE NOT SMART ENOUGH TO ASSUME** - read the facts
+- **THE USER KNOWS MORE THAN YOU** - listen to them
+- **RUSHING MAKES THINGS WORSE** - take your time
+- **VERIFICATION IS MANDATORY** - never skip it
+- **UNDERSTANDING COMES FIRST** - before any action
+
+## 11. TERMINAL MANAGEMENT
+- **NO MORE THAN NECESSARY TERMINALS** - keep it clean
+- **KILL OLD PROCESSES** before starting new ones
+- **USE ONE TERMINAL** for the main task
+- **CLOSE BACKGROUND PROCESSES** when done
+- **DON'T LEAVE TERMINALS HANGING** - clean up properly 

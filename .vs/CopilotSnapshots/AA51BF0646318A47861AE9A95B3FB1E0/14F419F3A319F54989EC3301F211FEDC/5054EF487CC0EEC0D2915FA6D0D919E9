@@ -1,0 +1,588 @@
+﻿// © 2025 AMPIQ All rights reserved.
+// Main Electron process for AMPiQ Desktop (Native Messaging Only)
+
+const { app, BrowserWindow, Menu, ipcMain, dialog } = require('electron');
+const path = require('path');
+const fs = require('fs');
+const { spawn } = require('child_process');
+const AMPSQLiteStorage = require('./sqlite-storage');
+
+let mainWindow;
+let sqliteStorage;
+
+const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+// Message queue for offline desktop app
+class MessageQueue {
+  constructor() {
+    this.queue = [];
+    this.maxSize = 1000;
+  }
+  enqueue(message) {
+    this.queue.push({
+      ...message,
+      timestamp: Date.now(),
+      id: this.generateId()
+    });
+    if (this.queue.length > this.maxSize) {
+      this.queue.shift();
+    }
+  }
+  dequeue() {
+    return this.queue.shift();
+  }
+  getPendingCount() {
+    return this.queue.length;
+  }
+  generateId() {
+    return 'msg_' + Math.random().toString(36).substr(2, 9);
+  }
+}
+const messageQueue = new MessageQueue();
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1400,
+    height: 900,
+    minWidth: 1000,
+    minHeight: 700,
+    resizable: true,
+    maximizable: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      enableRemoteModule: false,
+      preload: path.join(__dirname, 'preload.js'),
+      // Disable multimedia features to avoid ffmpeg dependency
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      experimentalFeatures: false
+    },
+    icon: path.join(__dirname, 'assets', 'icon256.png'),
+    titleBarStyle: 'default',
+    show: false,
+    backgroundColor: '#1a1a2e'
+  });
+
+  const startUrl = `file://${path.join(__dirname, 'index.html')}`;
+  mainWindow.loadURL(startUrl);
+
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    if (isDev) {
+      mainWindow.webContents.openDevTools();
+    }
+  });
+
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  mainWindow.on('close', (event) => {
+    if (!app.isQuiting) {
+      event.preventDefault();
+      mainWindow.hide();
+    }
+  });
+}
+
+function createMenu() {
+  const template = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Export Memory',
+          accelerator: 'CmdOrCtrl+E',
+          click: () => {
+            mainWindow.webContents.send('export-memory');
+          }
+        },
+        {
+          label: 'Clear Memory',
+          accelerator: 'CmdOrCtrl+Shift+C',
+          click: () => {
+            mainWindow.webContents.send('clear-memory');
+          }
+        },
+        { type: 'separator' },
+        {
+          label: 'Quit',
+          accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
+          click: () => {
+            app.quit();
+          }
+        }
+      ]
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        { role: 'togglefullscreen' }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'close' }
+      ]
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'About AMPiQ',
+          click: () => {
+            dialog.showMessageBox(mainWindow, {
+              type: 'info',
+              title: 'About AMPiQ',
+              message: 'AMPiQ - Advanced Memory Persistence Interface',
+              detail: 'Version 2.0.0\n\nAdvanced memory management for AI conversations.'
+            });
+          }
+        }
+      ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(template);
+  Menu.setApplicationMenu(menu);
+}
+
+app.whenReady().then(async () => {
+  // Disable multimedia features to avoid ffmpeg dependency
+  app.commandLine.appendSwitch('disable-features', 'MediaFoundationVideoCapture,WebCodecs');
+  app.commandLine.appendSwitch('disable-software-rasterizer');
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('disable-gpu-sandbox');
+  app.commandLine.appendSwitch('disable-accelerated-2d-canvas');
+  app.commandLine.appendSwitch('disable-accelerated-video-decode');
+  
+  // Initialize SQLite storage
+  sqliteStorage = new AMPSQLiteStorage();
+  const storageInitialized = await sqliteStorage.initialize();
+  
+  if (!storageInitialized) {
+    console.error('Failed to initialize SQLite storage');
+    dialog.showErrorBox('Storage Error', 'Failed to initialize conversation storage');
+  }
+  
+  createWindow();
+  createMenu();
+  
+  // Connect to extension after window is ready
+  setTimeout(() => {
+    initializeNativeMessaging();
+  }, 2000);
+  
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit();
+  }
+});
+
+app.on('before-quit', () => {
+  app.isQuiting = true;
+  
+  // Clear stats update interval
+  if (statsUpdateInterval) {
+    clearInterval(statsUpdateInterval);
+    statsUpdateInterval = null;
+  }
+  
+  // Close SQLite connection
+  if (sqliteStorage) {
+    sqliteStorage.close();
+  }
+});
+
+// IPC handlers (keep for renderer communication)
+ipcMain.handle('get-app-version', () => app.getVersion());
+ipcMain.handle('get-app-path', () => app.getAppPath());
+ipcMain.handle('show-save-dialog', async (event, options) => {
+  const result = await dialog.showSaveDialog(mainWindow, options);
+  return result;
+});
+ipcMain.handle('show-open-dialog', async (event, options) => {
+  const result = await dialog.showOpenDialog(mainWindow, options);
+  return result;
+});
+
+// Native messaging implementation - Desktop app IS the native host
+let extensionConnected = false;
+let statsUpdateInterval = null;
+
+// Connection state machine and retry logic
+const ConnectionState = {
+  DISCONNECTED: 'disconnected',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  ERROR: 'error'
+};
+let connectionState = ConnectionState.DISCONNECTED;
+let connectionAttempts = 0;
+const maxRetries = 5;
+
+function setConnectionState(state) {
+  connectionState = state;
+  updateConnectionStatus(state === ConnectionState.CONNECTED);
+}
+
+async function connectWithRetry() {
+  setConnectionState(ConnectionState.CONNECTING);
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      sendToExtension({ type: 'ping' });
+      // Wait for pong response
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+      if (extensionConnected) {
+        setConnectionState(ConnectionState.CONNECTED);
+        return true;
+      }
+    } catch (error) {
+      // Retry after delay
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+    }
+  }
+  setConnectionState(ConnectionState.ERROR);
+  return false;
+}
+
+// Health monitoring system
+class HealthMonitor {
+  constructor() {
+    this.lastHeartbeat = Date.now();
+    this.heartbeatInterval = 30000;
+    this.maxMissedHeartbeats = 3;
+    this.missedHeartbeats = 0;
+    this.monitorInterval = null;
+  }
+  startMonitoring() {
+    if (this.monitorInterval) return;
+    this.monitorInterval = setInterval(() => this.checkHealth(), this.heartbeatInterval);
+  }
+  checkHealth() {
+    const now = Date.now();
+    if (now - this.lastHeartbeat > this.heartbeatInterval) {
+      this.missedHeartbeats++;
+      if (this.missedHeartbeats >= this.maxMissedHeartbeats) {
+        this.handleConnectionLoss();
+      }
+    } else {
+      this.missedHeartbeats = 0;
+    }
+  }
+  handleConnectionLoss() {
+    console.error('Connection lost - attempting reconnection');
+    setConnectionState(ConnectionState.DISCONNECTED);
+    connectWithRetry();
+  }
+  heartbeat() {
+    this.lastHeartbeat = Date.now();
+    this.missedHeartbeats = 0;
+  }
+}
+const healthMonitor = new HealthMonitor();
+
+// Start health monitoring after window is ready
+app.on('ready', () => {
+  healthMonitor.startMonitoring();
+});
+
+// Initialize native messaging via stdin/stdout
+function initializeNativeMessaging() {
+  console.log('[AMP] Initializing native messaging (desktop app as native host)...');
+  
+  // Handle messages from extension via stdin
+  let messageBuffer = Buffer.alloc(0);
+  
+  process.stdin.on('data', (data) => {
+    messageBuffer = Buffer.concat([messageBuffer, data]);
+    
+    // Process complete messages
+    while (messageBuffer.length >= 4) {
+      const msgLen = messageBuffer.readUInt32LE(0);
+      
+      if (messageBuffer.length < 4 + msgLen) {
+        break; // Not enough data yet
+      }
+      
+      const msgData = messageBuffer.slice(4, 4 + msgLen);
+      messageBuffer = messageBuffer.slice(4 + msgLen);
+      
+      try {
+        const message = JSON.parse(msgData.toString());
+        console.log('[AMP] Received from extension:', message.type);
+        handleExtensionMessage(message);
+      } catch (error) {
+        console.error('[AMP] Error parsing extension message:', error);
+      }
+    }
+  });
+  
+  process.stdin.on('end', () => {
+    console.log('[AMP] Extension disconnected (stdin closed)');
+    extensionConnected = false;
+    updateConnectionStatus(false);
+  });
+  
+  // Set up periodic stats updates
+  if (!statsUpdateInterval) {
+    statsUpdateInterval = setInterval(() => {
+      if (extensionConnected) {
+        requestStatsFromExtension();
+      }
+    }, 10000);
+  }
+}
+
+// Send message to extension via stdout
+function sendToExtension(message) {
+  try {
+    const json = JSON.stringify(message);
+    const buffer = Buffer.alloc(4 + Buffer.byteLength(json));
+    buffer.writeUInt32LE(Buffer.byteLength(json), 0);
+    buffer.write(json, 4);
+    
+    process.stdout.write(buffer);
+    console.log('[AMP] Sent to extension:', message.type);
+  } catch (error) {
+    console.error('[AMP] Error sending to extension:', error);
+    messageQueue.enqueue(message); // Enqueue message for retry
+  }
+}
+
+// Handle messages from extension
+function handleExtensionMessage(message) {
+  switch (message.type) {
+    case 'ping':
+      // Respond to ping with pong
+      sendToExtension({ type: 'pong' });
+      extensionConnected = true;
+      healthMonitor.heartbeat();
+      setConnectionState(ConnectionState.CONNECTED);
+      console.log('[AMP] Extension connected via native messaging');
+      break;
+      
+    case 'storeMemory':
+      // Store memory chunk in SQLite
+      if (sqliteStorage && message.chunk) {
+        sqliteStorage.storeMemoryChunk(message.chunk);
+        console.log('[AMP] Stored memory chunk:', message.chunk.id);
+        
+        // Send confirmation
+        sendToExtension({
+          type: 'memory_stored',
+          chunkId: message.chunk.id,
+          success: true
+        });
+      }
+      break;
+      
+    case 'getMemoryStats':
+      // Send memory statistics
+      if (sqliteStorage) {
+        const stats = sqliteStorage.getStorageStats();
+        sendToExtension({
+          type: 'memory_stats',
+          stats: stats
+        });
+      }
+      break;
+      
+    case 'getAllMemory':
+      // Send all memory data
+      if (sqliteStorage) {
+        const conversations = sqliteStorage.getConversations({}, 100, 0);
+        const memoryData = [];
+        
+        for (const conv of conversations) {
+          const chunks = sqliteStorage.getConversationChunks(conv.id, 50);
+          memoryData.push(...chunks);
+        }
+        
+        sendToExtension({
+          type: 'all_memory_data',
+          chunks: memoryData
+        });
+      }
+      break;
+      
+    case 'searchMemory':
+      // Search memory
+      if (sqliteStorage && message.query) {
+        const results = sqliteStorage.searchMemory(message.query, {}, 20);
+        sendToExtension({
+          type: 'search_results',
+          results: results,
+          query: message.query
+        });
+      }
+      break;
+      
+    default:
+      console.log('[AMP] Unknown message type from extension:', message.type);
+  }
+  
+  // Update UI with latest data
+  updateUI();
+}
+
+// Request stats from extension
+function requestStatsFromExtension() {
+  sendToExtension({ type: 'getStats' });
+}
+
+// Update connection status in UI
+function updateConnectionStatus(connected) {
+  extensionConnected = connected;
+  
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('connection-status-update', connected);
+  }
+}
+
+// Update UI with latest data
+function updateUI() {
+  if (mainWindow && !mainWindow.isDestroyed() && sqliteStorage) {
+    const stats = sqliteStorage.getStorageStats();
+    const conversations = sqliteStorage.getConversations({}, 50, 0);
+    
+    mainWindow.webContents.send('memory-update', {
+      stats: stats,
+      conversations: conversations,
+      connected: extensionConnected
+    });
+  }
+}
+
+// Legacy IPC handlers (for compatibility)
+ipcMain.on('extension-connected', (event) => {
+  extensionConnected = true;
+  console.log('[AMP] Extension connected via IPC (legacy)');
+});
+
+ipcMain.on('extension-disconnected', (event) => {
+  extensionConnected = false;
+  console.log('[AMP] Extension disconnected via IPC (legacy)');
+});
+
+ipcMain.on('extension-stats', (event, stats) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('memory-update', { stats });
+  }
+});
+
+// Error handling
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Handle native messaging with SQLite integration
+async function handleNativeMessage(message, event) {
+  if (!sqliteStorage || !sqliteStorage.isInitialized) {
+    console.warn('SQLite storage not available for message:', message.type);
+    return;
+  }
+
+  try {
+    switch (message.type) {
+      case 'overflow_saved':
+      case 'all_memory_saved':
+        // Store chunks in SQLite when they overflow or are manually saved
+        if (message.chunks && Array.isArray(message.chunks)) {
+          for (const chunk of message.chunks) {
+            await sqliteStorage.storeMemoryChunk(chunk);
+          }
+          console.log(`Stored ${message.chunks.length} chunks in SQLite`);
+        }
+        break;
+        
+      case 'get_memory_data':
+        // Respond with memory data from SQLite
+        const conversations = sqliteStorage.getConversations(message.filters || {}, 50, 0);
+        const memoryData = [];
+        
+        for (const conv of conversations) {
+          const chunks = sqliteStorage.getConversationChunks(conv.id, 10);
+          if (chunks.length > 0) {
+            memoryData.push({
+              id: conv.id,
+              provider: conv.provider,
+              topic: conv.topic,
+              timestamp: conv.updated_at,
+              content: chunks.map(c => c.content).join('\n\n'),
+              chunkCount: chunks.length
+            });
+          }
+        }
+        
+        event.reply('native-response', {
+          type: 'memory_data_response',
+          data: memoryData
+        });
+        break;
+        
+      case 'search_memory':
+        // Search memory using SQLite FTS
+        const searchResults = sqliteStorage.searchMemory(message.query, message.filters || {}, 20);
+        event.reply('native-response', {
+          type: 'search_results',
+          data: searchResults,
+          query: message.query
+        });
+        break;
+        
+      case 'get_stats':
+        // Get storage statistics
+        const stats = sqliteStorage.getStorageStats();
+        event.reply('native-response', {
+          type: 'storage_stats',
+          data: stats
+        });
+        break;
+    }
+  } catch (error) {
+    console.error('Error handling native message:', error);
+  }
+}
+
+// IPC handlers for SQLite operations
+ipcMain.handle('get-memory-data', async (event, filters) => {
+  if (!sqliteStorage) return [];
+  return sqliteStorage.getConversations(filters, 50, 0);
+});
+
+ipcMain.handle('search-memory', async (event, query, filters) => {
+  if (!sqliteStorage) return [];
+  return sqliteStorage.searchMemory(query, filters, 20);
+});
+
+ipcMain.handle('get-storage-stats', async () => {
+  if (!sqliteStorage) return {};
+  return sqliteStorage.getStorageStats();
+});
+
+ipcMain.handle('export-conversation', async (event, conversationId) => {
+  if (!sqliteStorage) return null;
+  return sqliteStorage.exportConversation(conversationId);
+});

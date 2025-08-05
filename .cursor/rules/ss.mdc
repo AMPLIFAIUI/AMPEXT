@@ -1,0 +1,308 @@
+---
+alwaysApply: true
+---
+
+
+# AMP STRICT DEVELOPMENT RULES
+
+## 0. READ THE FUCKING DEVELOPMENT_RULES.md
+
+- **READ THE ENTIRE DEVELOPMENT_RULES.md** - every single line, every single word
+- **DON'T SKIM** - read it like you're studying for an exam
+- **UNDERSTAND EVERY DETAIL** - don't skip anything
+- **READ IT MULTIPLE TIMES** if you don't get it
+- **ASK QUESTIONS** if anything is unclear
+- **NEVER ASSUME** you know what it says - read it again
+
+## 1. ALWAYS READ ARCHITECTURE FIRST
+- **BEFORE ANYTHING ELSE** - read `AMP_ARCHITECTURE_RULES.md` completely
+- **UNDERSTAND THE SYSTEM** - know the data flow, communication, and architecture
+- **NO ASSUMPTIONS** - the architecture file explains everything like you're a child
+- **READ IT AGAIN** if you're confused about anything
+- **NEVER START CODING** without understanding the system first
+
+## 2. NO ASSUMPTIONS - QUESTION ALL POSSIBILITIES
+- NEVER assume what's happening - investigate the actual cause
+- QUESTION every possibility, even if it seems unlikely
+- LOOK at the actual error, not what you think it should be
+- VERIFY each step in the flow before moving to the next
+- DON'T make changes based on assumptions - find the real problem first
+
+## 3. NEVER ASSUME SUCCESS
+- ALWAYS verify terminal output shows actual success
+- ALWAYS test the connection after any changes
+- NEVER say "should work" without proof
+
+## 4. FIX ONE THING AT A TIME
+- ONE issue per fix - don't chase multiple problems
+- TEST immediately after each fix
+- VERIFY the fix worked before moving on
+
+## 5. ALWAYS CHECK TERMINAL FIRST
+- READ terminal output completely before responding
+- IDENTIFY the actual error from terminal logs
+- IGNORE unrelated errors (like cache errors)
+
+## 6. SQLITE RULES
+- ALWAYS rebuild better-sqlite3 when version mismatch
+- USE desktop-ui directory for rebuilds
+- IGNORE SQLite errors if HTTP server starts successfully
+
+## 7. PORT CONFLICT RULES
+- ALWAYS check if port 3000 is in use
+- KILL process before starting dev version
+- VERIFY port is free before npm start
+
+## 8. CONNECTION TESTING RULES
+- OPEN extension dropdown to trigger connection
+- CHECK terminal for connection messages
+- VERIFY desktop app shows "Connected"
+- TEST stats display in extension
+
+## 9. DEBUG LOGGING RULES
+- LOOK for 🔧 messages in terminal
+- IGNORE spam - focus on actual errors
+- TRACE the flow from extension to desktop
+
+## 10. DEVELOPMENT WORKFLOW
+- USE dev version (npm start) for testing
+- RELOAD extension after code changes
+- REFRESH desktop app (Ctrl+R) after renderer changes
+- KILL old processes before starting new ones
+
+## 11. ERROR PRIORITY
+1. Port conflicts (EADDRINUSE)
+2. SQLite version mismatch (ERR_DLOPEN_FAILED)
+3. Connection issues (no HTTP messages)
+4. UI display issues (stats not showing)
+
+## 12. SUCCESS CRITERIA
+- Terminal shows: "HTTP server started successfully"
+- Extension connects: "Received ping request"
+- Desktop shows: "Connected" status
+- Stats display: Numbers in extension dropdown
+
+## 13. INFINITE LOOP PREVENTION
+- NEVER call updateConnectionStatus from setConnectionState
+- ADD guards to prevent rapid successive calls (1 second minimum)
+- AVOID circular function calls between connection functions
+
+## 14. HTTP COMMUNICATION RULES
+- Extension is SENDER (initiates all requests to localhost:3000)
+- Desktop is RECEIVER (responds to extension requests)
+- Use fetch() for HTTP requests, not native messaging
+- Handle both POST and GET requests properly
+
+## 15. EXTENSION RELOAD RULES
+- INSTRUCT user to reload extension in chrome://extensions/ after code changes
+- TELL user when reload is needed (background.js, manifest.json, popup files)
+- CHECK for "Receiving end does not exist" errors after user reloads
+- VERIFY background script is running after reload
+- TEST dropdown popup functionality after reload
+
+## 16. DESKTOP APP RULES
+- PRESS Ctrl+R to refresh renderer after main.js changes
+- CHECK for "Native messaging host active" vs "Connected" status
+- VERIFY renderer receives memory-update events
+- TEST connection status display in UI
+
+## 17. STATS DISPLAY RULES
+- VERIFY memory pool has data (not empty)
+- CHECK extension dropdown shows real numbers
+- TEST session time calculation
+- VERIFY live data feed shows meaningful updates
+
+## 18. PROCESS MANAGEMENT RULES
+- KILL AMPiQ.exe and electron processes before rebuilds
+- USE taskkill /PID for stubborn processes
+- CHECK for locked files during builds
+- CLEAN node_modules if build fails
+
+## 19. BUILD RULES
+- ALWAYS check build output for success messages
+- VERIFY installer/portable app is created
+- TEST the built app before reporting success
+- HANDLE NSIS errors gracefully
+
+## 20. DEBUG MESSAGING RULES
+- USE 🔧 prefix for debug messages
+- LOG connection status changes
+- TRACE HTTP request/response flow
+- REDUCE spam in activity feeds
+
+## 21. ERROR SOURCE VERIFICATION
+- DON'T assume errors are from AMP - check source
+- IGNORE unrelated website JavaScript errors
+- FOCUS on actual connection and stats issues
+- VERIFY error context before fixing
+
+## 22. COMMUNICATION FLOW VERIFICATION
+- Extension sends ping → Desktop receives → Desktop responds
+- Desktop sends memory-update → Renderer receives → UI updates
+- CHECK each step in the flow
+- VERIFY data reaches destination
+
+## BUILD ASSESSMENT RULE
+When running a build process, always check for:
+- A clear 'Build complete' or 'Output: ...' message from the build tool
+- The absence of any fatal errors or repeated failures in the output
+- The actual presence and integrity of the expected output files (installer, portable app)
+- If any of these checks fail, the build should be considered unsuccessful or suspect
+
+## CURRENT ARCHITECTURE
+- **Communication**: HTTP on localhost:3000 (not native messaging)
+- **Extension**: Sends requests, displays stats
+- **Desktop**: Receives requests, stores data, shows UI
+- **Data Flow**: Extension captures → Desktop stores → Both display
+
+# AMP STRICT DEVELOPMENT RULES
+
+## 0. READ THE FUCKING DEVELOPMENT_RULES.md
+
+- **READ THE ENTIRE DEVELOPMENT_RULES.md** - every single line, every single word
+- **DON'T SKIM** - read it like you're studying for an exam
+- **UNDERSTAND EVERY DETAIL** - don't skip anything
+- **READ IT MULTIPLE TIMES** if you don't get it
+- **ASK QUESTIONS** if anything is unclear
+- **NEVER ASSUME** you know what it says - read it again
+
+## 1. ALWAYS READ ARCHITECTURE FIRST
+- **BEFORE ANYTHING ELSE** - read `AMP_ARCHITECTURE_RULES.md` completely
+- **UNDERSTAND THE SYSTEM** - know the data flow, communication, and architecture
+- **NO ASSUMPTIONS** - the architecture file explains everything like you're a child
+- **READ IT AGAIN** if you're confused about anything
+- **NEVER START CODING** without understanding the system first
+
+## 2. NO ASSUMPTIONS - QUESTION ALL POSSIBILITIES
+- NEVER assume what's happening - investigate the actual cause
+- QUESTION every possibility, even if it seems unlikely
+- LOOK at the actual error, not what you think it should be
+- VERIFY each step in the flow before moving to the next
+- DON'T make changes based on assumptions - find the real problem first
+
+## 3. NEVER ASSUME SUCCESS
+- ALWAYS verify terminal output shows actual success
+- ALWAYS test the connection after any changes
+- NEVER say "should work" without proof
+
+## 4. FIX ONE THING AT A TIME
+- ONE issue per fix - don't chase multiple problems
+- TEST immediately after each fix
+- VERIFY the fix worked before moving on
+
+## 5. ALWAYS CHECK TERMINAL FIRST
+- READ terminal output completely before responding
+- IDENTIFY the actual error from terminal logs
+- IGNORE unrelated errors (like cache errors)
+
+## 6. SQLITE RULES
+- ALWAYS rebuild better-sqlite3 when version mismatch
+- USE desktop-ui directory for rebuilds
+- IGNORE SQLite errors if HTTP server starts successfully
+
+## 7. PORT CONFLICT RULES
+- ALWAYS check if port 3000 is in use
+- KILL process before starting dev version
+- VERIFY port is free before npm start
+
+## 8. CONNECTION TESTING RULES
+- OPEN extension dropdown to trigger connection
+- CHECK terminal for connection messages
+- VERIFY desktop app shows "Connected"
+- TEST stats display in extension
+
+## 9. DEBUG LOGGING RULES
+- LOOK for 🔧 messages in terminal
+- IGNORE spam - focus on actual errors
+- TRACE the flow from extension to desktop
+
+## 10. DEVELOPMENT WORKFLOW
+- USE dev version (npm start) for testing
+- RELOAD extension after code changes
+- REFRESH desktop app (Ctrl+R) after renderer changes
+- KILL old processes before starting new ones
+
+## 11. ERROR PRIORITY
+1. Port conflicts (EADDRINUSE)
+2. SQLite version mismatch (ERR_DLOPEN_FAILED)
+3. Connection issues (no HTTP messages)
+4. UI display issues (stats not showing)
+
+## 12. SUCCESS CRITERIA
+- Terminal shows: "HTTP server started successfully"
+- Extension connects: "Received ping request"
+- Desktop shows: "Connected" status
+- Stats display: Numbers in extension dropdown
+
+## 13. INFINITE LOOP PREVENTION
+- NEVER call updateConnectionStatus from setConnectionState
+- ADD guards to prevent rapid successive calls (1 second minimum)
+- AVOID circular function calls between connection functions
+
+## 14. HTTP COMMUNICATION RULES
+- Extension is SENDER (initiates all requests to localhost:3000)
+- Desktop is RECEIVER (responds to extension requests)
+- Use fetch() for HTTP requests, not native messaging
+- Handle both POST and GET requests properly
+
+## 15. EXTENSION RELOAD RULES
+- INSTRUCT user to reload extension in chrome://extensions/ after code changes
+- TELL user when reload is needed (background.js, manifest.json, popup files)
+- CHECK for "Receiving end does not exist" errors after user reloads
+- VERIFY background script is running after reload
+- TEST dropdown popup functionality after reload
+
+## 16. DESKTOP APP RULES
+- PRESS Ctrl+R to refresh renderer after main.js changes
+- CHECK for "Native messaging host active" vs "Connected" status
+- VERIFY renderer receives memory-update events
+- TEST connection status display in UI
+
+## 17. STATS DISPLAY RULES
+- VERIFY memory pool has data (not empty)
+- CHECK extension dropdown shows real numbers
+- TEST session time calculation
+- VERIFY live data feed shows meaningful updates
+
+## 18. PROCESS MANAGEMENT RULES
+- KILL AMPiQ.exe and electron processes before rebuilds
+- USE taskkill /PID for stubborn processes
+- CHECK for locked files during builds
+- CLEAN node_modules if build fails
+
+## 19. BUILD RULES
+- ALWAYS check build output for success messages
+- VERIFY installer/portable app is created
+- TEST the built app before reporting success
+- HANDLE NSIS errors gracefully
+
+## 20. DEBUG MESSAGING RULES
+- USE 🔧 prefix for debug messages
+- LOG connection status changes
+- TRACE HTTP request/response flow
+- REDUCE spam in activity feeds
+
+## 21. ERROR SOURCE VERIFICATION
+- DON'T assume errors are from AMP - check source
+- IGNORE unrelated website JavaScript errors
+- FOCUS on actual connection and stats issues
+- VERIFY error context before fixing
+
+## 22. COMMUNICATION FLOW VERIFICATION
+- Extension sends ping → Desktop receives → Desktop responds
+- Desktop sends memory-update → Renderer receives → UI updates
+- CHECK each step in the flow
+- VERIFY data reaches destination
+
+## BUILD ASSESSMENT RULE
+When running a build process, always check for:
+- A clear 'Build complete' or 'Output: ...' message from the build tool
+- The absence of any fatal errors or repeated failures in the output
+- The actual presence and integrity of the expected output files (installer, portable app)
+- If any of these checks fail, the build should be considered unsuccessful or suspect
+
+## CURRENT ARCHITECTURE
+- **Communication**: HTTP on localhost:3000 (not native messaging)
+- **Extension**: Sends requests, displays stats
+- **Desktop**: Receives requests, stores data, shows UI
+- **Data Flow**: Extension captures → Desktop stores → Both display
