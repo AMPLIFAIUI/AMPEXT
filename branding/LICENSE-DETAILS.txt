@@ -1,9 +1,0 @@
-Copyright © 2025 AMPiQ. Australia All rights reserved.
-
-Software Licensing Agreement for AMP Infinite Context Middleware
-
-This software is licensed, not sold. By using this software, you agree to the full terms outlined at https://ampiq.ai/legal
-
-Commercial redistribution, modification, or integration into proprietary systems requires an active enterprise license.
-
-This product contains encrypted routines, obfuscated client-side scripts, and integrity markers to detect tampering.

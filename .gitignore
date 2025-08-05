@@ -13,6 +13,7 @@ desktop-ui/build/
 desktop-ui/dist/
 desktop-ui/temp-build/
 node_modules
+venv/
 *.exe
 *.dmg
 *.deb
