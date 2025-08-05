@@ -1,0 +1,9 @@
+﻿{
+  "name": "com.ampiq.amp.native",
+  "description": "AMP Native Messaging Host",
+  "path": "S:\\A.M.P\\amp-native-host.js",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://<YOUR_EXTENSION_ID>/"
+  ]
+}

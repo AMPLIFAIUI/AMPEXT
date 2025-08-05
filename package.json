@@ -1,0 +1,59 @@
+{
+  "name": "A.M.P",
+  "version": "4.0.0",
+  "description": "A.M.P - Advanced Memory Persistence",
+  "main": "desktop-ui/main.js",
+  "scripts": {
+    "start": "cd desktop-ui && npm start",
+    "build": "cd desktop-ui && npm run build",
+    "dist": "cd desktop-ui && npm run dist",
+    "clean": "cd desktop-ui && npm run clean",
+    "clean-build": "cd desktop-ui && npm run clean-build",
+    "install-deps": "cd desktop-ui && npm install",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "workspaces": [
+    "desktop-ui"
+  ],
+  "keywords": [
+    "memory",
+    "ai",
+    "conversation",
+    "persistence",
+    "dual-zipper",
+    "chrome-extension",
+    "electron",
+    "AMPiQ",
+    "A.M.P"
+  ],
+  "author": "AMPiQ",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AMPLIFAIUI/A.M.P.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AMPLIFAIUI/A.M.P/issues"
+  },
+  "homepage": "https://github.com/AMPLIFAIUI/A.M.P#readme",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "devDependencies": {
+    "7zip-bin": "^5.2.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.2.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.0.1",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.1",
+    "mysql2": "^3.14.3",
+    "pkg": "^5.8.1",
+    "ws": "^8.18.3"
+  }
+}

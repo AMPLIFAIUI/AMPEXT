@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMP Middleware</title>
+    <link rel="icon" type="image/svg+xml" href="../assets/AMPSVG.svg">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header with AMP Logo -->
+        <header class="app-header">
+            <div class="logo-container">
+                <img src="../assets/AMPSVG.svg" alt="AMP Middleware" class="app-logo">
+                <h1 class="app-title">AMP Middleware</h1>
+            </div>
+            <div class="header-controls">
+                <div class="server-status" id="serverStatus">
+                    <span class="status-indicator" id="statusIndicator"></span>
+                    <span class="status-text" id="statusText">Checking...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="tab-navigation">
+            <button class="tab-button active" data-tab="dashboard">
+                <svg class="tab-icon" viewBox="0 0 24 24">
+                    <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/>
+                </svg>
+                Dashboard
+            </button>
+            <button class="tab-button" data-tab="memory">
+                <svg class="tab-icon" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+                Memory Vault
+            </button>
+            <button class="tab-button" data-tab="processing">
+                <svg class="tab-icon" viewBox="0 0 24 24">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                </svg>
+                Text Processing
+            </button>
+            <button class="tab-button" data-tab="settings">
+                <svg class="tab-icon" viewBox="0 0 24 24">
+                    <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+                </svg>
+                Settings
+            </button>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Dashboard Tab -->
+            <div class="tab-content active" id="dashboard">
+                <div class="dashboard-grid">
+                    <div class="dashboard-card">
+                        <h3>Server Status</h3>
+                        <div class="status-display">
+                            <div class="status-item">
+                                <span class="label">Status:</span>
+                                <span class="value" id="serverStatusValue">Unknown</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="label">Port:</span>
+                                <span class="value" id="serverPortDisplay">3456</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="label">Host:</span>
+                                <span class="value" id="serverHostDisplay">127.0.0.1</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <h3>Security Status</h3>
+                        <div class="security-display">
+                            <div class="security-item">
+                                <span class="label">Encryption:</span>
+                                <span class="value" id="encryptionStatus">AES-256-GCM</span>
+                            </div>
+                            <div class="security-item">
+                                <span class="label">Key Status:</span>
+                                <span class="value" id="keyStatus">Secure</span>
+                            </div>
+                            <div class="security-item">
+                                <span class="label">Vault Status:</span>
+                                <span class="value" id="vaultStatus">Encrypted</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <h3>Memory Usage</h3>
+                        <div class="memory-display">
+                            <div class="memory-item">
+                                <span class="label">Used Slots:</span>
+                                <span class="value" id="usedSlots">0</span>
+                            </div>
+                            <div class="memory-item">
+                                <span class="label">Total Slots:</span>
+                                <span class="value" id="totalSlots">9</span>
+                            </div>
+                            <div class="memory-item">
+                                <span class="label">Hot Slots:</span>
+                                <span class="value" id="hotSlotsDisplay">4</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-card">
+                        <h3>Quick Actions</h3>
+                        <div class="quick-actions">
+                            <button class="action-button" id="restartServer">
+                                <svg class="action-icon" viewBox="0 0 24 24">
+                                    <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                                </svg>
+                                Restart Server
+                            </button>
+                            <button class="action-button" id="clearMemory">
+                                <svg class="action-icon" viewBox="0 0 24 24">
+                                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                </svg>
+                                Clear Memory
+                            </button>
+                            <button class="action-button" id="exportData">
+                                <svg class="action-icon" viewBox="0 0 24 24">
+                                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
+                                </svg>
+                                Export Data
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Memory Vault Tab -->
+            <div class="tab-content" id="memory">
+                <div class="memory-container">
+                    <div class="memory-header">
+                        <h2>Memory Vault</h2>
+                        <div class="memory-controls">
+                            <button class="btn btn-primary" id="addMemory">Add Memory</button>
+                            <button class="btn btn-secondary" id="refreshMemory">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="memory-grid" id="memoryGrid">
+                        <!-- Memory slots will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Text Processing Tab -->
+            <div class="tab-content" id="processing">
+                <div class="processing-container">
+                    <div class="processing-header">
+                        <h2>Text Processing</h2>
+                    </div>
+                    <div class="processing-form">
+                        <div class="form-group">
+                            <label for="inputText">Input Text:</label>
+                            <textarea id="inputText" placeholder="Enter text to process..." rows="6"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="processingType">Processing Type:</label>
+                            <select id="processingType">
+                                <option value="summarize">Summarize</option>
+                                <option value="embed">Generate Embedding</option>
+                                <option value="analyze">Analyze</option>
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn btn-primary" id="processText">Process</button>
+                            <button class="btn btn-secondary" id="clearText">Clear</button>
+                        </div>
+                    </div>
+                    <div class="processing-result">
+                        <h3>Result:</h3>
+                        <div class="result-display" id="resultDisplay">
+                            <p class="placeholder">Processing results will appear here...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div class="tab-content" id="settings">
+                <div class="settings-container">
+                    <div class="settings-header">
+                        <h2>Settings</h2>
+                    </div>
+                    <div class="settings-form">
+                        <div class="form-group">
+                            <label for="serverPort">Server Port:</label>
+                            <input type="number" id="serverPort" value="3456" min="1024" max="65535">
+                        </div>
+                        <div class="form-group">
+                            <label for="serverHost">Server Host:</label>
+                            <input type="text" id="serverHost" value="127.0.0.1">
+                        </div>
+                        <div class="form-group">
+                            <label for="maxSlots">Maximum Memory Slots:</label>
+                            <input type="number" id="maxSlots" value="9" min="1" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label for="hotSlots">Hot Memory Slots:</label>
+                            <input type="number" id="hotSlots" value="4" min="1" max="50">
+                        </div>
+                        <div class="form-actions">
+                            <button class="btn btn-primary" id="saveSettings">Save Settings</button>
+                            <button class="btn btn-secondary" id="resetSettings">Reset to Default</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Activity Log -->
+        <aside class="activity-log">
+            <div class="log-header">
+                <h3>Activity Log</h3>
+                <button class="btn btn-small" id="clearLog">Clear</button>
+            </div>
+            <div class="log-content" id="activityLog">
+                <div class="log-entry">
+                    <span class="log-time">12:00:00</span>
+                    <span class="log-message">Application started</span>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal" id="addMemoryModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add Memory</h3>
+                <button class="modal-close" id="closeAddMemoryModal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="memoryId">Memory ID:</label>
+                    <input type="text" id="memoryId" placeholder="Enter unique ID">
+                </div>
+                <div class="form-group">
+                    <label for="memorySummary">Summary:</label>
+                    <textarea id="memorySummary" placeholder="Enter memory summary..." rows="4"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="memorySlot">Slot:</label>
+                    <select id="memorySlot">
+                        <option value="0">Slot 0</option>
+                        <option value="1">Slot 1</option>
+                        <option value="2">Slot 2</option>
+                        <option value="3">Slot 3</option>
+                        <option value="4">Slot 4</option>
+                        <option value="5">Slot 5</option>
+                        <option value="6">Slot 6</option>
+                        <option value="7">Slot 7</option>
+                        <option value="8">Slot 8</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancelAddMemory">Cancel</button>
+                <button class="btn btn-primary" id="confirmAddMemory">Add Memory</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html> 

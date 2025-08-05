@@ -1,0 +1,42 @@
+{
+  "name": "@your-org/amp-server",
+  "version": "1.0.0",
+  "description": "AMP Infinite Context Middleware",
+  "main": "server/main.js",
+  "bin": "server/main.js",
+  "scripts": {
+    "start": "node server/main.js",
+    "start:production": "node start-production.js",
+    "test": "jest",
+    "build": "pkg . --output dist/amp.exe",
+    "build:win": "pkg . --target node16-win-x64 --output dist/amp.exe",
+    "build:linux": "pkg . --target node16-linux-x64 --output dist/amp-linux",
+    "build:mac": "pkg . --target node16-macos-x64 --output dist/amp-mac"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "express-rate-limit": "^6.7.0",
+    "helmet": "^6.0.0",
+    "level": "^7.0.0",
+    "morgan": "^1.10.0",
+    "sharp": "^0.34.3",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "pkg": {
+    "scripts": ["server/**/*.js"],
+    "assets": [
+      "config.json",
+      "data/**/*"
+    ],
+    "targets": [
+      "node16-linux-x64",
+      "node16-win-x64",
+      "node16-macos-x64"
+    ],
+    "outputPath": "dist",
+    "bin": "server/main.js"
+  }
+}
