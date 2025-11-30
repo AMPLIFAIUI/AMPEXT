@@ -1,8 +1,16 @@
 // © 2025 AMPIQ All rights reserved.
 // Background script for cross-tab memory management and AMP app communication
 // Hot Memory Priority - minimal storage, maximum performance
-// Version: 2.0.1 - Cache busted
+// Version: 2.0.2 - Full MemoryPool integration
 
+// Import utils.js which contains MemoryPool class
+// This works in Manifest V3 Service Workers
+try {
+  importScripts('utils.js');
+  console.log('✅ AMP Background: utils.js imported successfully');
+} catch (error) {
+  console.error('❌ AMP Background: Failed to import utils.js:', error);
+}
 
 // Message Queue for offline desktop app
 class MessageQueue {
@@ -507,213 +515,258 @@ chrome.action.onClicked.addListener(async (tab) => {
 
 async function initializeMemoryPool() {
   try {
-    console.log('AMP Background: Initializing memory pool with fallback mode...');
-    
-    // Use fallback memory pool since ES6 imports aren't allowed in Service Workers
-    activeMemoryPool = {
-      hotPool: new Map(),
-      domMirror: new Map(),
-      conversationIndex: new Map(),
-      stats: {
-        domChunks: 0,
-        hotBufferChunks: 0,
-        archivedChunks: 0,
-        totalChunks: 0,
-        hotMemorySize: 0,
-        domSize: 0,
-        hotBufferSize: 0,
-        archiveSize: 0,
-        messageRate: 0,
-        growthRate: 0,
-        providers: [],
-        topics: [],
-        lastUpdated: Date.now(),
-        storageDir: '',
-        overflowCount: 0,
-        allMemoryCount: 0,
-        sessionActive: false,
-        slotStats: [
-          { id: 1, currentSize: 0, maxSize: 0, chunkCount: 0, utilization: '0%' },
-          { id: 2, currentSize: 0, maxSize: 0, chunkCount: 0, utilization: '0%' },
-          { id: 3, currentSize: 0, maxSize: 0, chunkCount: 0, utilization: '0%' },
-          { id: 4, currentSize: 0, maxSize: 0, chunkCount: 0, utilization: '0%' },
-          { id: 5, currentSize: 0, maxSize: 0, chunkCount: 0, utilization: '0%' }
-        ],
-        overflowQueueLength: 0
-      },
-      getStats: function() {
-        // Return stats in the same format as the real memory pool
-        return {
-          domChunks: this.stats.domChunks || 0,
-          hotBufferChunks: this.stats.hotBufferChunks || 0,
-          archivedChunks: this.stats.archivedChunks || 0,
-          totalChunks: this.stats.totalChunks || 0,
-          hotMemorySize: this.stats.hotMemorySize || 0,
-          domSize: this.stats.domSize || 0,
-          hotBufferSize: this.stats.hotBufferSize || 0,
-          archiveSize: this.stats.archiveSize || 0,
-          messageRate: this.stats.messageRate || 0,
-          growthRate: this.stats.growthRate || 0,
-          providers: this.stats.providers || [],
-          topics: this.stats.topics || [],
-          // Add additional properties that might be expected
-          lastUpdated: Date.now(),
-          storageDir: '',
-          overflowCount: 0,
-          allMemoryCount: 0,
-          sessionActive: false,
-          slotStats: [
-            { id: 1, currentSize: 0, maxSize: 0, chunkCount: 0, utilization: '0%' },
-            { id: 2, currentSize: 0, maxSize: 0, chunkCount: 0, utilization: '0%' },
-            { id: 3, currentSize: 0, maxSize: 0, chunkCount: 0, utilization: '0%' },
-            { id: 4, currentSize: 0, maxSize: 0, chunkCount: 0, utilization: '0%' },
-            { id: 5, currentSize: 0, maxSize: 0, chunkCount: 0, utilization: '0%' }
-          ],
-          overflowQueueLength: 0
-        };
-      },
-      getLiveBytesCount: function() {
-        return {
-          summaryIndexBytes: 0,
-          rawArchiveBytes: 0,
-          totalBytes: 0,
-          summaryIndexMB: '0.00',
-          rawArchiveMB: '0.00',
-          totalMB: '0.00',
-          timestamp: Date.now(),
-          chunksPerSecond: 0,
-          bytesPerSecond: 0
-        };
-      },
-      getAll: function() {
-        return Array.from(this.hotPool.values());
-      },
-      performWaterfallCascade: async function() {
-        console.log('AMP Background: Waterfall cascade triggered (fallback mode)');
-      },
-      performReverseInjection: async function(targetType = 'scroll', contextQuery = '', maxItems = 5) {
-        console.log(`🔄 AMP Background: Reverse injection triggered (fallback mode) - type: ${targetType}`);
-        // In fallback mode, return recent chunks from hot pool for injection
-        const recentChunks = Array.from(this.hotPool.values())
-          .sort((a, b) => b.timestamp - a.timestamp)
-          .slice(0, maxItems)
-          .map(chunk => ({
-            id: chunk.id,
-            content: chunk.fullText || chunk.content,
-            provider: chunk.ai_provider,
-            timestamp: chunk.timestamp
-          }));
-        console.log(`🔄 AMP Background: Returning ${recentChunks.length} chunks for reverse injection`);
-        return recentChunks;
-      },
-      getLiveBytesCount: function() {
-        const now = Date.now();
-        const totalBytes = this.stats.hotMemorySize || 0;
-        const domMirrorBytes = Array.from(this.domMirror.values()).reduce((sum, c) => sum + (c.size || 0), 0);
-        
-        return {
-          summaryIndexBytes: totalBytes,
-          rawArchiveBytes: domMirrorBytes,
-          totalBytes: totalBytes + domMirrorBytes,
-          summaryIndexMB: (totalBytes / (1024 * 1024)).toFixed(2),
-          rawArchiveMB: (domMirrorBytes / (1024 * 1024)).toFixed(2),
-          totalMB: ((totalBytes + domMirrorBytes) / (1024 * 1024)).toFixed(2),
-          timestamp: now,
-          chunksPerSecond: 0,
-          bytesPerSecond: 0
-        };
-      },
-      addChunk: async function(text, metadata) {
-        try {
-          const chunk = {
-            id: `chunk_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            conversation_id: metadata.conversation_id || `conv_${Date.now()}`,
-            fullText: text,
-            summary: text.substring(0, 200),
-            ai_provider: metadata.ai_provider || 'unknown',
-            tab_id: metadata.tab_id || 'unknown',
-            topic: metadata.topic || 'conversation',
-            timestamp: Date.now(),
-            size: text.length
-          };
-          
-          this.hotPool.set(chunk.id, chunk);
-          this.stats.totalChunks++;
-          this.stats.hotMemorySize += text.length;
-          
-          console.log(`AMP Background: Chunk added (fallback mode) - ${text.length} chars`);
-          return chunk;
-        } catch (error) {
-          console.error('AMP Background: Failed to add chunk (fallback mode):', error);
-          return null;
-        }
-      },
-      getAllChunks: function() {
-        return Array.from(this.hotPool.values());
-      },
-      retryOverflowQueue: async function() {
-        console.log('AMP Background: Overflow queue retry (fallback mode)');
-      },
-      searchSummaryIndex: async function(query, options) {
-        console.log('AMP Background: Search summary index (fallback mode)');
-        return [];
-      },
-      searchThinZipper: async function(query) {
-        console.log('AMP Background: Search thin zipper (fallback mode)');
-        // Return mock results for fallback mode
-        return Array.from(this.hotPool.values()).map(chunk => ({
-          address: chunk.id,
-          relevance: 0.8,
-          summary: chunk.summary
-        }));
-      },
-      retrieveFromFatZipper: async function(address) {
-        console.log('AMP Background: Retrieve from fat zipper (fallback mode)');
-        const chunk = this.hotPool.get(address);
-        if (chunk) {
-          return {
-            chunk: chunk,
-            s1s9Data: {}
-          };
-        }
-        return null;
-      },
-      getSmartContextForInjection: async function(query, conversationId, maxTokens) {
-        console.log('AMP Background: Get smart context for injection (fallback mode)');
-        // Return mock context for fallback mode
-        const chunks = Array.from(this.hotPool.values()).filter(chunk => 
-          chunk.conversation_id === conversationId
-        );
-        return chunks.map(chunk => chunk.fullText).join('\n\n').substring(0, maxTokens);
+    // Try to use the real MemoryPool class from utils.js
+    if (typeof MemoryPool !== 'undefined') {
+      console.log('✅ AMP Background: Using REAL MemoryPool class from utils.js');
+      activeMemoryPool = new MemoryPool();
+      
+      // Load existing data from storage
+      const loadSuccess = await activeMemoryPool.loadFromStorage();
+      if (loadSuccess) {
+        console.log('✅ AMP Background: Loaded existing memory data from storage');
+      } else {
+        console.log('ℹ️ AMP Background: No existing memory data found, starting fresh');
       }
-    };
+      
+      console.log('✅ AMP Background: Real MemoryPool initialized with:');
+      console.log(`   - 5x1MB hot slots`);
+      console.log(`   - S1-S9 progression system`);
+      console.log(`   - Dual zipper (fat + thin)`);
+      console.log(`   - Desktop overflow support`);
+      
+      return true;
+    }
     
-    // Add some sample data for testing stats
-    console.log('AMP Background: Adding sample data for stats testing...');
-    await activeMemoryPool.addChunk('This is a sample conversation about artificial intelligence and machine learning. The user is asking questions about how neural networks work and their applications in modern technology.', {
-      ai_provider: 'chatgpt',
-      conversation_id: 'sample_conv_1',
-      topic: 'AI Discussion'
-    });
+    // Fallback if MemoryPool class not available
+    console.warn('⚠️ AMP Background: MemoryPool class not found, using fallback mode...');
+    activeMemoryPool = createFallbackMemoryPool();
     
-    await activeMemoryPool.addChunk('Another sample message about web development and JavaScript frameworks. This covers topics like React, Vue, and Angular for building modern web applications.', {
-      ai_provider: 'claude',
-      conversation_id: 'sample_conv_2', 
-      topic: 'Web Development'
-    });
-    
-    await activeMemoryPool.addChunk('A third sample about data science and Python programming. This includes information about pandas, numpy, and scikit-learn for data analysis and machine learning.', {
-      ai_provider: 'bard',
-      conversation_id: 'sample_conv_3',
-      topic: 'Data Science'
-    });
-    
-    console.log('AMP Background: Memory pool initialized with sample data');
+    console.log('AMP Background: Fallback memory pool initialized');
     return true;
   } catch (error) {
-    console.error('AMP Background: Failed to initialize memory pool:', error);
+    console.error('❌ AMP Background: Failed to initialize memory pool:', error);
+    
+    // Create fallback on error
+    activeMemoryPool = createFallbackMemoryPool();
     return false;
   }
+}
+
+// Fallback memory pool for when MemoryPool class is not available
+function createFallbackMemoryPool() {
+  return {
+    hotPool: new Map(),
+    domMirror: new Map(),
+    conversationIndex: new Map(),
+    providerIndex: new Map(),
+    topicIndex: new Map(),
+    stats: {
+      domChunks: 0,
+      hotBufferChunks: 0,
+      archivedChunks: 0,
+      totalChunks: 0,
+      hotMemorySize: 0,
+      domSize: 0,
+      hotBufferSize: 0,
+      archiveSize: 0,
+      messageRate: 0,
+      growthRate: 0,
+      providers: [],
+      topics: [],
+      lastUpdated: Date.now()
+    },
+    
+    getStats: function() {
+      const chunks = Array.from(this.hotPool.values());
+      const providers = [...new Set(chunks.map(c => c.ai_provider))];
+      const topics = [...new Set(chunks.map(c => c.topic))];
+      
+      return {
+        domChunks: chunks.filter(c => c.inDom).length,
+        hotBufferChunks: chunks.filter(c => c.inHot && !c.inDom).length,
+        archivedChunks: chunks.filter(c => c.slot === 9).length,
+        totalChunks: chunks.length,
+        hotMemorySize: chunks.reduce((sum, c) => sum + (c.size || 0), 0),
+        domSize: chunks.filter(c => c.inDom).reduce((sum, c) => sum + (c.size || 0), 0),
+        hotBufferSize: chunks.filter(c => c.inHot).reduce((sum, c) => sum + (c.size || 0), 0),
+        archiveSize: chunks.filter(c => c.slot === 9).reduce((sum, c) => sum + (c.size || 0), 0),
+        messageRate: 0,
+        growthRate: 0,
+        providers: providers,
+        topics: topics,
+        lastUpdated: Date.now(),
+        slotStats: [
+          { id: 1, currentSize: 0, maxSize: 1024*1024, chunkCount: 0, utilization: '0%' },
+          { id: 2, currentSize: 0, maxSize: 1024*1024, chunkCount: 0, utilization: '0%' },
+          { id: 3, currentSize: 0, maxSize: 1024*1024, chunkCount: 0, utilization: '0%' },
+          { id: 4, currentSize: 0, maxSize: 1024*1024, chunkCount: 0, utilization: '0%' },
+          { id: 5, currentSize: 0, maxSize: 1024*1024, chunkCount: 0, utilization: '0%' }
+        ],
+        overflowQueueLength: 0
+      };
+    },
+    
+    getLiveBytesCount: function() {
+      const totalBytes = Array.from(this.hotPool.values()).reduce((sum, c) => sum + (c.size || 0), 0);
+      const domMirrorBytes = Array.from(this.domMirror.values()).reduce((sum, c) => sum + (c.size || 0), 0);
+      
+      return {
+        summaryIndexBytes: totalBytes,
+        rawArchiveBytes: domMirrorBytes,
+        totalBytes: totalBytes + domMirrorBytes,
+        summaryIndexMB: (totalBytes / (1024 * 1024)).toFixed(2),
+        rawArchiveMB: (domMirrorBytes / (1024 * 1024)).toFixed(2),
+        totalMB: ((totalBytes + domMirrorBytes) / (1024 * 1024)).toFixed(2),
+        timestamp: Date.now(),
+        chunksPerSecond: 0,
+        bytesPerSecond: 0
+      };
+    },
+    
+    getAll: function() {
+      return Array.from(this.hotPool.values());
+    },
+    
+    getAllChunks: function() {
+      return Array.from(this.hotPool.values());
+    },
+    
+    addChunk: async function(text, metadata) {
+      try {
+        const chunk = {
+          id: `chunk_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          conversation_id: metadata.conversation_id || `conv_${Date.now()}`,
+          fullText: text,
+          summary: text.substring(0, 200),
+          ai_provider: metadata.ai_provider || 'unknown',
+          tab_id: metadata.tab_id || 'unknown',
+          topic: metadata.topic || 'conversation',
+          timestamp: Date.now(),
+          size: text.length,
+          slot: 1,
+          inDom: true,
+          inHot: true
+        };
+        
+        this.hotPool.set(chunk.id, chunk);
+        
+        // Update conversation index
+        const convChunks = this.conversationIndex.get(chunk.conversation_id) || [];
+        convChunks.push(chunk.id);
+        this.conversationIndex.set(chunk.conversation_id, convChunks);
+        
+        // Update provider index
+        const providerConvs = this.providerIndex.get(chunk.ai_provider) || new Set();
+        providerConvs.add(chunk.conversation_id);
+        this.providerIndex.set(chunk.ai_provider, providerConvs);
+        
+        console.log(`AMP Background: Chunk added (fallback) - ${text.length} chars`);
+        return chunk;
+      } catch (error) {
+        console.error('AMP Background: Failed to add chunk:', error);
+        return null;
+      }
+    },
+    
+    // Get conversation chunks by conversation ID
+    getConversation: function(conversationId) {
+      const chunkIds = this.conversationIndex.get(conversationId) || [];
+      return chunkIds.map(id => this.hotPool.get(id)).filter(Boolean);
+    },
+    
+    // Get cross-provider context
+    getCrossProviderContext: function(query, maxResults = 2) {
+      const results = [];
+      const queryLower = (query || '').toLowerCase();
+      
+      for (const [convId, chunkIds] of this.conversationIndex) {
+        const chunks = chunkIds.map(id => this.hotPool.get(id)).filter(Boolean);
+        if (chunks.length === 0) continue;
+        
+        // Simple relevance scoring
+        const matchingChunks = chunks.filter(chunk => {
+          const text = (chunk.fullText || chunk.summary || '').toLowerCase();
+          return queryLower === '' || text.includes(queryLower);
+        });
+        
+        if (matchingChunks.length > 0) {
+          results.push(...matchingChunks.slice(0, 1));
+        }
+        
+        if (results.length >= maxResults) break;
+      }
+      
+      return results.slice(0, maxResults);
+    },
+    
+    getSmartContextForInjection: async function(query, conversationId, maxTokens) {
+      const chunks = this.getConversation(conversationId);
+      return chunks.map(chunk => chunk.fullText).join('\n\n').substring(0, maxTokens);
+    },
+    
+    searchThinZipper: async function(query) {
+      return Array.from(this.hotPool.values()).map(chunk => ({
+        address: chunk.id,
+        relevance: 0.8,
+        summary: chunk.summary
+      }));
+    },
+    
+    retrieveFromFatZipper: async function(address) {
+      const chunk = this.hotPool.get(address);
+      return chunk ? { chunk, s1s9Data: {} } : null;
+    },
+    
+    performWaterfallCascade: async function() {
+      console.log('AMP Background: Waterfall cascade triggered (fallback)');
+    },
+    
+    performReverseInjection: async function() {
+      console.log('AMP Background: Reverse injection triggered (fallback)');
+      return [];
+    },
+    
+    retryOverflowQueue: async function() {
+      console.log('AMP Background: Overflow queue retry (fallback)');
+    },
+    
+    saveToStorage: async function() {
+      // Save to chrome.storage.local
+      try {
+        const data = {
+          hotPool: Object.fromEntries(this.hotPool),
+          conversationIndex: Object.fromEntries(this.conversationIndex),
+          providerIndex: Object.fromEntries(
+            Array.from(this.providerIndex.entries()).map(([k, v]) => [k, Array.from(v)])
+          )
+        };
+        await chrome.storage.local.set({ amp_fallback_data: data });
+        return true;
+      } catch (error) {
+        console.error('Failed to save fallback data:', error);
+        return false;
+      }
+    },
+    
+    loadFromStorage: async function() {
+      try {
+        const result = await chrome.storage.local.get(['amp_fallback_data']);
+        if (result.amp_fallback_data) {
+          const data = result.amp_fallback_data;
+          this.hotPool = new Map(Object.entries(data.hotPool || {}));
+          this.conversationIndex = new Map(Object.entries(data.conversationIndex || {}));
+          this.providerIndex = new Map(
+            Object.entries(data.providerIndex || {}).map(([k, v]) => [k, new Set(v)])
+          );
+          return true;
+        }
+        return false;
+      } catch (error) {
+        console.error('Failed to load fallback data:', error);
+        return false;
+      }
+    }
+  };
 }
 
 // Enhanced tab management
@@ -1027,9 +1080,44 @@ async function handleMessage(message, sender, sendResponse) {
                 provider: chunk.ai_provider || chunk.provider || 'unknown',
                 timestamp: chunk.timestamp || Date.now(),
                 index: index,
-                type: chunk.topic || chunk.type || 'conversation'
+                type: chunk.topic || chunk.type || 'conversation',
+                slot: chunk.slot || 1,
+                s1s9Data: chunk.s1s9Data || null,
+                fatAddress: chunk.fatAddress || null
               });
             });
+          }
+          
+          // Also try to get data from desktop app (cold storage)
+          try {
+            const desktopResponse = await fetch('http://127.0.0.1:3000/all-memory?limit=100', {
+              method: 'GET',
+              signal: AbortSignal.timeout(2000)
+            });
+            
+            if (desktopResponse.ok) {
+              const desktopData = await desktopResponse.json();
+              if (desktopData.data && desktopData.data.chunks) {
+                // Add desktop chunks that aren't already in hot pool
+                const hotIds = new Set(memoryData.map(c => c.id));
+                desktopData.data.chunks.forEach((chunk, index) => {
+                  if (!hotIds.has(chunk.id)) {
+                    memoryData.push({
+                      id: chunk.id || `desktop-${index}`,
+                      content: chunk.content || chunk.fullText || '',
+                      provider: chunk.ai_provider || chunk.provider || 'unknown',
+                      timestamp: chunk.timestamp || Date.now(),
+                      index: memoryData.length,
+                      type: chunk.topic || chunk.type || 'conversation',
+                      slot: 'cold',
+                      source: 'desktop'
+                    });
+                  }
+                });
+              }
+            }
+          } catch (desktopError) {
+            console.log('🔧 Background: Desktop app not available for cold storage query');
           }
           
           console.log(`🔧 Background: Returning ${memoryData.length} memory chunks to UI`);
@@ -1859,7 +1947,7 @@ async function checkAmpAppStatus() {
   }
   
   try {
-    const response = await fetch('http://127.0.0.1:3456/status', {
+    const response = await fetch('http://127.0.0.1:3000/status', {
       method: 'GET',
       mode: 'cors',
       headers: {

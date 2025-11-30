@@ -133,6 +133,81 @@ class InMemoryStorage {
   getAllMemoryChunks() {
     return Array.from(this.chunks.values());
   }
+  
+  // Get conversations (group chunks by conversation_id)
+  getConversations(limit = 50, offset = 0) {
+    const conversationMap = new Map();
+    
+    for (const chunk of this.chunks.values()) {
+      const convId = chunk.conversation_id || 'unknown';
+      if (!conversationMap.has(convId)) {
+        conversationMap.set(convId, {
+          id: convId,
+          provider: chunk.ai_provider || 'unknown',
+          topic: chunk.topic || 'conversation',
+          created_at: chunk.timestamp,
+          updated_at: chunk.timestamp,
+          message_count: 0,
+          total_size: 0
+        });
+      }
+      
+      const conv = conversationMap.get(convId);
+      conv.message_count++;
+      conv.total_size += chunk.size || 0;
+      if (chunk.timestamp > conv.updated_at) {
+        conv.updated_at = chunk.timestamp;
+      }
+      if (chunk.timestamp < conv.created_at) {
+        conv.created_at = chunk.timestamp;
+      }
+    }
+    
+    const conversations = Array.from(conversationMap.values())
+      .sort((a, b) => b.updated_at - a.updated_at);
+    
+    return conversations.slice(offset, offset + limit);
+  }
+  
+  // Get chunks for a specific conversation
+  getChunks(conversationId, limit = 100) {
+    const chunks = Array.from(this.chunks.values())
+      .filter(c => c.conversation_id === conversationId)
+      .sort((a, b) => a.timestamp - b.timestamp);
+    
+    return chunks.slice(0, limit);
+  }
+  
+  // Search with limit
+  search(query, limit = 20) {
+    return this.searchMemory(query).slice(0, limit);
+  }
+  
+  // Get recent activity
+  getRecent(limit = 20) {
+    return Array.from(this.chunks.values())
+      .sort((a, b) => b.timestamp - a.timestamp)
+      .slice(0, limit)
+      .map(chunk => ({
+        id: chunk.id,
+        conversation_id: chunk.conversation_id,
+        provider: chunk.ai_provider,
+        topic: chunk.topic,
+        preview: (chunk.content || chunk.fullText || '').substring(0, 100),
+        timestamp: chunk.timestamp,
+        size: chunk.size
+      }));
+  }
+  
+  // Get all data for UI display
+  getAllData() {
+    return {
+      conversations: this.getConversations(1000, 0),
+      chunks: Array.from(this.chunks.values()),
+      stats: this.getStorageStats(),
+      zipperData: { fatZipper: [], thinZipper: [] }
+    };
+  }
 }
 
 const messageQueue = new MessageQueue();
@@ -240,6 +315,144 @@ class HTTPServer {
             connected: true,
             storageAvailable: !!sqliteStorage,
             stats: stats,
+            timestamp: Date.now()
+          }));
+        } else if (pathname === '/conversations') {
+          // Get all conversations with optional filters
+          console.log('🔧 HTTP Server: Received conversations request');
+          updateConnectionStatus(true);
+          
+          const query = parsedUrl.query;
+          const limit = parseInt(query.limit) || 50;
+          const offset = parseInt(query.offset) || 0;
+          const provider = query.provider || null;
+          
+          let conversations = [];
+          if (sqliteStorage && sqliteStorage.isInitialized) {
+            conversations = sqliteStorage.getConversations(
+              provider ? { provider } : {},
+              limit,
+              offset
+            );
+          } else {
+            conversations = inMemoryStorage.getConversations(limit, offset);
+          }
+          
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ 
+            type: 'conversations',
+            conversations: conversations,
+            count: conversations.length,
+            timestamp: Date.now()
+          }));
+        } else if (pathname === '/chunks') {
+          // Get chunks for a specific conversation
+          console.log('🔧 HTTP Server: Received chunks request');
+          updateConnectionStatus(true);
+          
+          const query = parsedUrl.query;
+          const conversationId = query.conversation_id;
+          const limit = parseInt(query.limit) || 100;
+          
+          if (!conversationId) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'conversation_id required' }));
+            return;
+          }
+          
+          let chunks = [];
+          if (sqliteStorage && sqliteStorage.isInitialized) {
+            chunks = sqliteStorage.getConversationChunks(conversationId, limit);
+          } else {
+            chunks = inMemoryStorage.getChunks(conversationId, limit);
+          }
+          
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ 
+            type: 'chunks',
+            chunks: chunks,
+            count: chunks.length,
+            conversation_id: conversationId,
+            timestamp: Date.now()
+          }));
+        } else if (pathname === '/search') {
+          // Search across all stored memory
+          console.log('🔧 HTTP Server: Received search request');
+          updateConnectionStatus(true);
+          
+          const query = parsedUrl.query;
+          const searchTerm = query.q || '';
+          const limit = parseInt(query.limit) || 20;
+          
+          let results = [];
+          if (searchTerm && sqliteStorage && sqliteStorage.isInitialized) {
+            results = sqliteStorage.searchMemory(searchTerm, {}, limit);
+          } else if (searchTerm) {
+            results = inMemoryStorage.search(searchTerm, limit);
+          }
+          
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ 
+            type: 'search_results',
+            results: results,
+            count: results.length,
+            query: searchTerm,
+            timestamp: Date.now()
+          }));
+        } else if (pathname === '/recent') {
+          // Get recent activity for live feed
+          console.log('🔧 HTTP Server: Received recent activity request');
+          updateConnectionStatus(true);
+          
+          const query = parsedUrl.query;
+          const limit = parseInt(query.limit) || 20;
+          
+          let activity = [];
+          if (sqliteStorage && sqliteStorage.isInitialized) {
+            activity = sqliteStorage.getRecentActivity(limit);
+          } else {
+            activity = inMemoryStorage.getRecent(limit);
+          }
+          
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ 
+            type: 'recent_activity',
+            activity: activity,
+            count: activity.length,
+            timestamp: Date.now()
+          }));
+        } else if (pathname === '/all-memory') {
+          // Get ALL stored memory data for UI display
+          console.log('🔧 HTTP Server: Received all-memory request');
+          updateConnectionStatus(true);
+          
+          const query = parsedUrl.query;
+          const limit = parseInt(query.limit) || 1000;
+          
+          let memoryData = {
+            conversations: [],
+            chunks: [],
+            stats: {},
+            zipperData: { fatZipper: [], thinZipper: [] }
+          };
+          
+          if (sqliteStorage && sqliteStorage.isInitialized) {
+            memoryData.conversations = sqliteStorage.getConversations({}, limit, 0);
+            memoryData.stats = sqliteStorage.getStorageStats();
+            
+            // Get chunks for each conversation
+            for (const conv of memoryData.conversations.slice(0, 50)) {
+              const chunks = sqliteStorage.getConversationChunks(conv.id, 100);
+              memoryData.chunks.push(...chunks);
+            }
+          } else {
+            memoryData = inMemoryStorage.getAllData();
+          }
+          
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ 
+            type: 'all_memory',
+            data: memoryData,
             timestamp: Date.now()
           }));
         } else {
