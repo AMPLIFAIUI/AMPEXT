@@ -591,9 +591,20 @@ async function initializeMemoryPool() {
       performWaterfallCascade: async function() {
         console.log('AMP Background: Waterfall cascade triggered (fallback mode)');
       },
-      performReverseInjection: async function() {
-        console.log('AMP Background: Reverse injection triggered (fallback mode)');
-        return [];
+      performReverseInjection: async function(targetType = 'scroll', contextQuery = '', maxItems = 5) {
+        console.log(`🔄 AMP Background: Reverse injection triggered (fallback mode) - type: ${targetType}`);
+        // In fallback mode, return recent chunks from hot pool for injection
+        const recentChunks = Array.from(this.hotPool.values())
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, maxItems)
+          .map(chunk => ({
+            id: chunk.id,
+            content: chunk.fullText || chunk.content,
+            provider: chunk.ai_provider,
+            timestamp: chunk.timestamp
+          }));
+        console.log(`🔄 AMP Background: Returning ${recentChunks.length} chunks for reverse injection`);
+        return recentChunks;
       },
       getLiveBytesCount: function() {
         const now = Date.now();
@@ -982,6 +993,22 @@ async function handleMessage(message, sender, sendResponse) {
           sendResponse({ success: true, tabId: tabId });
         } catch (error) {
           console.error('Error getting tab ID:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+        
+      case 'triggerReverseInjection':
+        try {
+          console.log('🔄 AMP Background: Reverse injection triggered:', message.triggerType);
+          if (activeMemoryPool && activeMemoryPool.performReverseInjection) {
+            const result = await activeMemoryPool.performReverseInjection(message.triggerType || 'scroll', '', 5);
+            sendResponse({ success: true, injected: result });
+          } else {
+            console.warn('AMP Background: performReverseInjection not available');
+            sendResponse({ success: false, error: 'Reverse injection not available' });
+          }
+        } catch (error) {
+          console.error('AMP Background: Reverse injection error:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;

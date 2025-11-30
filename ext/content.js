@@ -334,11 +334,57 @@ async function initializeSession() {
   // Check if this tab is currently being monitored
   await checkMonitoringStatus();
   
+  // Auto-enable monitoring for AI sites
+  if (currentProvider !== 'Unknown' && !isActiveMonitoringTab) {
+    // Auto-enable for known AI providers
+    const aiProviders = ['ChatGPT', 'Claude', 'Gemini', 'Poe', 'Perplexity', 'Pi', 'Blackbox', 'YouChat', 'Phind', 'BingChat', 'Forefront', 'LMSYS', 'Reka', 'Ora', 'AIChat', 'Socratic', 'Tome', 'Anthropic', 'Kagi', 'Zephyr', 'Alpaca', 'Cursor'];
+    if (aiProviders.includes(currentProvider)) {
+      isActiveMonitoringTab = true;
+      console.log(`🟢 AMP: Auto-enabled monitoring for ${currentProvider}`);
+    }
+  }
+  
   // Initialize context injection system
   initializeContextInjection();
   
+  // Initialize scroll listener for reverse injection
+  initializeScrollListener();
+  
   console.log(`AMP: ${currentProvider} - ${currentConversationId}`);
   observeDOM();
+}
+
+// Initialize scroll listener for reverse injection
+function initializeScrollListener() {
+  let lastScrollY = 0;
+  let scrollTimeout = null;
+  
+  window.addEventListener('scroll', () => {
+    // Debounce scroll events
+    if (scrollTimeout) {
+      clearTimeout(scrollTimeout);
+    }
+    
+    scrollTimeout = setTimeout(() => {
+      const currentScrollY = window.scrollY;
+      
+      // Detect reverse scroll (scrolling up significantly)
+      if (currentScrollY < lastScrollY - 200) {
+        console.log('🔄 AMP: Reverse scroll detected, triggering reverse injection');
+        chrome.runtime.sendMessage({ 
+          action: 'triggerReverseInjection',
+          triggerType: 'scroll',
+          scrollDelta: lastScrollY - currentScrollY
+        }).catch(error => {
+          console.warn('AMP: Failed to send reverse injection request:', error);
+        });
+      }
+      
+      lastScrollY = currentScrollY;
+    }, 100); // Debounce for 100ms
+  }, { passive: true });
+  
+  console.log('🔄 AMP: Scroll listener initialized for reverse injection');
 }
 
 // Check if this tab is currently being monitored
@@ -435,15 +481,41 @@ async function requestContextInjection() {
 function handleContextInjection(context, amount) {
   console.log(`🔄 AMP: Injecting context (${amount} chars)...`);
   
-  // Find the main input area
-  const inputSelectors = [
-    'textarea[placeholder*="message"]',
-    'textarea[placeholder*="Message"]',
-    'textarea[placeholder*="chat"]',
-    'textarea[placeholder*="Chat"]',
-    'div[contenteditable="true"]',
-    'input[type="text"]'
-  ];
+  // Find the main input area with provider-specific selectors
+  const provider = getAIProvider();
+  let inputSelectors = [];
+  
+  if (provider === 'ChatGPT') {
+    inputSelectors = [
+      '#prompt-textarea',
+      'textarea[data-id="root"]',
+      'textarea[placeholder*="message"]',
+      'textarea[placeholder*="Message"]'
+    ];
+  } else if (provider === 'Claude') {
+    inputSelectors = [
+      '.ProseMirror[contenteditable="true"]',
+      'div[contenteditable="true"]',
+      'textarea[placeholder*="message"]'
+    ];
+  } else if (provider === 'Gemini') {
+    inputSelectors = [
+      'textarea[placeholder*="Enter a prompt"]',
+      'textarea[aria-label*="prompt"]',
+      'textarea[placeholder*="message"]'
+    ];
+  } else {
+    // Generic fallback
+    inputSelectors = [
+      'textarea[placeholder*="message"]',
+      'textarea[placeholder*="Message"]',
+      'textarea[placeholder*="chat"]',
+      'textarea[placeholder*="Chat"]',
+      '.ProseMirror[contenteditable="true"]',
+      'div[contenteditable="true"]',
+      'input[type="text"]'
+    ];
+  }
   
   let inputElement = null;
   for (const selector of inputSelectors) {
@@ -502,10 +574,17 @@ function observeDOM() {
 
 // Process new content with S1-S9 progression
 async function processNewContent() {
-  // Only process content if this tab is actively being monitored
-  if (!isActiveMonitoringTab) {
-    return;
+  // Auto-enable monitoring for AI sites if not already enabled
+  if (!isActiveMonitoringTab && currentProvider !== 'Unknown') {
+    const aiProviders = ['ChatGPT', 'Claude', 'Gemini', 'Poe', 'Perplexity', 'Pi', 'Blackbox', 'YouChat', 'Phind', 'BingChat', 'Forefront', 'LMSYS', 'Reka', 'Ora', 'AIChat', 'Socratic', 'Tome', 'Anthropic', 'Kagi', 'Zephyr', 'Alpaca', 'Cursor'];
+    if (aiProviders.includes(currentProvider)) {
+      isActiveMonitoringTab = true;
+      console.log(`🟢 AMP: Auto-enabled monitoring during content processing`);
+    }
   }
+  
+  // Process content (monitoring gate removed for AI sites)
+  // Users can still manually disable via icon click if needed
   
   const chunks = extractConversationTurns();
   
@@ -792,169 +871,13 @@ function showContextCarryoverPrompt(provider, hostname) {
   }, 10000);
 }
 
-// Initialize session
-async function initializeSession() {
-  currentProvider = getAIProvider();
-  currentTabId = await getTabId();
-  currentTopic = window.getTopic ? window.getTopic() : 'conversation';
-  currentConversationId = `conv_${currentProvider}_${currentTabId}_${Date.now()}`;
-  
-  console.log(`🌊 AMP Extension: ${currentProvider} - ${currentConversationId}`);
-  
-  // Add visible debug indicator
-  addDebugIndicator();
-  
-  
-  
-  observeDOM();
-}
+// REMOVED: Duplicate initializeSession() - using the one at line 329
 
-function observeDOM() {
-  console.log('AMP: Starting data collection');
-  
-  const observer = new MutationObserver(async (mutations) => {
-    let foundNewMessages = false;
-    
-    mutations.forEach(mutation => {
-      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        mutation.addedNodes.forEach(node => {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const text = node.textContent?.trim();
-            if (text && text.length > 20) {
-              console.log('🆕 AMP: LIVE content detected:', text.substring(0, 100) + '...');
-              foundNewMessages = true;
-            }
-          }
-        });
-      }
-    });
-    
-    if (foundNewMessages) {
-      await processNewContent();
-    }
-  });
-  
-  // Enhanced selectors for LIVE testing
-  const chatSelectors = [
-    // ChatGPT
-    '[data-message-author-role]',
-    '.group.w-full',
-    '[data-testid^="conversation"]',
-    // Claude
-    '.message', 
-    '[data-testid*="message"]',
-    // Gemini
-    '.model-response-text',
-    '.response-container',
-    // Generic
-    '[role="main"]',
-    '.conversation',
-    '#chat-container',
-    '.chat-messages',
-    '.messages-container',
-    '.message-container',
-    'main'
-  ];
-  
-  let observedCount = 0;
-  
-  // Observe ALL containers
-  chatSelectors.forEach(selector => {
-    const containers = document.querySelectorAll(selector);
-    containers.forEach(container => {
-      if (!container.hasAttribute('amp-observed')) {
-      observer.observe(container, { 
-        childList: true, 
-        subtree: true,
-        characterData: true 
-      });
-        container.setAttribute('amp-observed', 'true');
-        observedCount++;
-    }
-    });
-  });
-  
-  // Always observe body
-    observer.observe(document.body, { childList: true, subtree: true });
-  
-  console.log(`📡 AMP: LIVE observing ${observedCount} containers + body`);
-  
-  // Immediate scan
-  setTimeout(() => {
-    console.log('AMP: Performing content scan');
-    processNewContent();
-  }, 1000);
-  
-  // Smart real-time collection (reduced frequency)
-  setInterval(() => {
-    console.log('🔄 AMP: Smart content scan...');
-    processNewContent();
-  }, 5000); // Reduced from 2 seconds to 5 seconds
-}
+// REMOVED: Duplicate observeDOM() - using the one at line 475
 
 
 
-async function processNewContent() {
-  // Only process content if this tab is actively being monitored
-  if (!isActiveMonitoringTab) {
-    return;
-  }
-  
-  const chunks = extractConversationTurns();
-  
-  for (const chunk of chunks) {
-    if (chunk.text.trim().length < 20) continue;
-    
-    messageCount++;
-    
-    // Create memory chunk
-    const memoryChunk = {
-      id: `msg_${Date.now()}_${messageCount}`,
-      conversation_id: currentConversationId,
-      fullText: chunk.text,
-      summary: chunk.text.length > 200 ? chunk.text.substring(0, 200) + '...' : chunk.text,
-      ai_provider: currentProvider,
-      tab_id: currentTabId,
-      topic: currentTopic,
-      timestamp: Date.now(),
-      slot: 1,
-      message_type: chunk.type,
-      message_index: messageCount,
-      size: chunk.text.length,
-      inDom: true,
-      inHot: true,
-      sessionActive: true
-    };
-    
-    // Create DOM node
-    const node = createMemoryNode(memoryChunk, chunk.type);
-    document.body.appendChild(node);
-    visibleNodes.push(node);
-    
-    // Maintain visible node limit
-    if (visibleNodes.length > MAX_VISIBLE_NODES) {
-      const stale = visibleNodes.shift();
-      stale.remove();
-    }
-    
-    // Send to background script
-    if (chrome && chrome.runtime) {
-      chrome.runtime.sendMessage({
-        action: 'storeMemory',
-        content: chunk.text,
-        summary: memoryChunk.summary,
-        provider: currentProvider,
-        tabId: currentTabId,
-        topic: currentTopic,
-        conversationId: currentConversationId,
-        messageId: memoryChunk.id,
-        messageType: chunk.type,
-      });
-    }
-    
-    console.log(`💧 Stored ${chunk.type} message (${chunk.text.length} chars)`);
-  }
-}
+// REMOVED: Duplicate processNewContent() - using the one at line 504
 
 function extractConversationTurns() {
   const chunks = [];

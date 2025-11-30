@@ -124,6 +124,15 @@ class AMPZipperViewer {
             this.memoryData = this.getSampleData();
             this.createConveyorBelts();
         }
+        
+        // Listen for real-time stats updates from background
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+            if (message.action === 'statsUpdate' && message.stats) {
+                console.log('🔧 AMP UI: Received stats update:', message.stats);
+                // Reload memory data when stats update
+                this.loadMemoryData();
+            }
+        });
     }
     
     getSampleData() {
