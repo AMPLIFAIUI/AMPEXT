@@ -217,6 +217,10 @@ class MemoryPool {
       { id: 5, maxSize: 1 * 1024 * 1024, currentSize: 0, chunks: new Map() }  // 1MB
     ];
     
+    // CRITICAL: hotPool is the unified view of all chunks across slots
+    // Used by getConversation(), searchInConversations(), etc.
+    this.hotPool = new Map(); // chunk_id -> chunk (unified view across all slots)
+    
     // S1-S9 Progression System
     this.s1s9Progression = new Map(); // conversationId -> S1-S9 progression
     this.currentSquares = new Map(); // conversationId -> current square (1-9)
@@ -946,6 +950,10 @@ class MemoryPool {
         slot.chunks.set(chunk.id, chunk);
         slot.currentSize += chunk.size;
         chunk.slot = slot.id;
+        
+        // CRITICAL: Also add to hotPool for unified access
+        this.hotPool.set(chunk.id, chunk);
+        
         return true;
       }
     }
@@ -970,6 +978,10 @@ class MemoryPool {
             currentSlot.chunks.set(chunk.id, chunk);
             currentSlot.currentSize += chunk.size;
             chunk.slot = currentSlot.id;
+            
+            // CRITICAL: Also add to hotPool for unified access
+            this.hotPool.set(chunk.id, chunk);
+            
             return true;
           }
         }
@@ -994,6 +1006,10 @@ class MemoryPool {
           await this.sendToDesktopOverflow(oldestChunk);
           currentSlot.chunks.delete(oldestChunk.id);
           currentSlot.currentSize -= oldestChunk.size;
+          
+          // CRITICAL: Remove from hotPool when overflowing to desktop
+          this.hotPool.delete(oldestChunk.id);
+          
           return true;
         }
         return false;
@@ -1009,6 +1025,8 @@ class MemoryPool {
       nextSlot.chunks.set(oldestChunk.id, oldestChunk);
       nextSlot.currentSize += oldestChunk.size;
       oldestChunk.slot = nextSlot.id;
+      
+      // Note: hotPool entry stays the same, just slot number updated
       
       console.log(`🔄 AMP: Cascaded chunk ${oldestChunk.id} from slot ${currentSlot.id} to slot ${nextSlot.id}`);
       return true;
@@ -3376,7 +3394,7 @@ class SmartSecurity {
   
   async checkAMPServerAvailable() {
     try {
-      const response = await fetch('http://127.0.0.1:3456/status', {
+      const response = await fetch('http://127.0.0.1:3000/status', {
         method: 'GET',
         signal: AbortSignal.timeout(1000)
       });
