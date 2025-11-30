@@ -750,6 +750,15 @@ function startPeriodicUpdates() {
     // Listen for stats updates from background script
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (message.action === 'statsUpdate' && message.stats) {
+            console.log('🔧 Dropdown: Received statsUpdate broadcast:', message.stats);
+            updateMemoryStatsFromBroadcast(message.stats);
+        }
+    });
+    
+    // Also listen for the statsUpdate action directly
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.type === 'statsUpdate' && message.stats) {
+            console.log('🔧 Dropdown: Received statsUpdate message:', message.stats);
             updateMemoryStatsFromBroadcast(message.stats);
         }
     });

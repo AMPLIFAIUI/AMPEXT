@@ -1050,6 +1050,22 @@ async function handleMessage(message, sender, sendResponse) {
         }
         break;
         
+      case 'triggerReverseInjection':
+        try {
+          console.log('🔄 AMP Background: Reverse injection triggered:', message.triggerType);
+          if (activeMemoryPool && activeMemoryPool.performReverseInjection) {
+            const result = await activeMemoryPool.performReverseInjection(message.triggerType || 'scroll', '', 5);
+            sendResponse({ success: true, injected: result });
+          } else {
+            console.warn('AMP Background: performReverseInjection not available');
+            sendResponse({ success: false, error: 'Reverse injection not available' });
+          }
+        } catch (error) {
+          console.error('AMP Background: Reverse injection error:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+        
       case 'getMemoryData':
         try {
           const memoryData = [];
