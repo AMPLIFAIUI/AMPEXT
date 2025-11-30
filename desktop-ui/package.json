@@ -1,6 +1,6 @@
 {
   "name": "A.M.P",
-  "version": "2.0.0",
+  "version": "4.0.0",
   "description": "A.M.P - Advanced Memory Persistence",
   "main": "main.js",
   "icon": "../assets/icon256.png",
@@ -18,26 +18,39 @@
     "directories": {
       "output": "temp-build"
     },
+    "buildDependenciesFromSource": false,
+    "npmRebuild": false,
     "files": [
       "**/*",
       "interface/**/*",
-      "node_modules/better-sqlite3/**/*",
-      "node_modules/bindings/**/*",
-      "!dist/**/*"
+      "!dist/**/*",
+      "!*.ps1",
+      "!*.md"
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "../assets/icon256.png"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "../assets/icon256.png",
+      "signAndEditExecutable": false
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "deleteAppDataOnUninstall": true
+      "deleteAppDataOnUninstall": true,
+      "installerIcon": "../assets/icon128.ico",
+      "uninstallerIcon": "../assets/icon128.ico",
+      "installerHeaderIcon": "../assets/icon128.ico",
+      "license": "../LICENSE",
+      "include": "installer.nsh"
     },
     "extraResources": []
   },
@@ -52,9 +65,7 @@
   "license": "MIT",
   "dependencies": {
     "better-sqlite3": "^12.2.0",
-    "bindings": "^1.5.0",
-    "express": "^5.1.0",
-    "ws": "^8.18.3"
+    "bindings": "^1.5.0"
   },
   "devDependencies": {
     "7zip-bin": "^5.2.0",

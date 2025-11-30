@@ -1,18 +1,15 @@
 // © 2025 AMPIQ All rights reserved.
-// Main Electron process for AMPiQ Desktop (HTTP Server)
+// Main Electron process for AMPiQ Desktop (Native Messaging)
 
 const path = require('path');
 const fs = require('fs');
-const http = require('http');
-const url = require('url');
 const AMPSQLiteStorage = require('./sqlite-storage');
 
-// Only import Electron modules if not running as server
+// Only import Electron modules
 let app, BrowserWindow, Menu, ipcMain, dialog;
 let mainWindow;
 let sqliteStorage;
 let isDev;
-let httpServer;
 
 // Import Electron modules
 const electron = require('electron');
@@ -213,40 +210,7 @@ class InMemoryStorage {
 const messageQueue = new MessageQueue();
 const inMemoryStorage = new InMemoryStorage();
 
-// HTTP Server for extension communication
-class HTTPServer {
-  constructor(port = 3000) {
-    this.port = port;
-    this.server = null;
-    this.isRunning = false;
-  }
-
-  start() {
-    return new Promise((resolve, reject) => {
-      this.server = http.createServer((req, res) => {
-        this.handleRequest(req, res);
-      });
-
-      this.server.listen(this.port, '127.0.0.1', () => {
-        this.isRunning = true;
-        console.log(`[AMP] HTTP server running on http://127.0.0.1:${this.port}`);
-        resolve();
-      });
-
-      this.server.on('error', (error) => {
-        console.error('[AMP] HTTP server error:', error);
-        reject(error);
-      });
-    });
-  }
-
-  stop() {
-    if (this.server) {
-      this.server.close();
-      this.isRunning = false;
-      console.log('[AMP] HTTP server stopped');
-    }
-  }
+// Native messaging is handled by amp-native-host.js
 
   async handleRequest(req, res) {
     // Enable CORS for extension
@@ -729,14 +693,7 @@ app.whenReady().then(async () => {
     sqliteStorage = null;
   }
   
-  // Start HTTP server for extension communication
-  try {
-    httpServer = new HTTPServer(3000);
-    await httpServer.start();
-    console.log('[AMP] HTTP server started successfully');
-  } catch (error) {
-    console.error('[AMP] Failed to start HTTP server:', error);
-  }
+  // Native messaging is handled by separate native host process
   
   createWindow();
   createMenu();
@@ -753,23 +710,18 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   app.isQuiting = true;
-  
-  // Stop HTTP server
-  if (httpServer) {
-    httpServer.stop();
-  }
-  
+
   // Clear stats update interval
   if (statsUpdateInterval) {
     clearInterval(statsUpdateInterval);
     statsUpdateInterval = null;
   }
-  
+
   // Close SQLite connection
   if (sqliteStorage) {
     sqliteStorage.close();
   }
-  
+
   // Force cleanup after 2 seconds
   setTimeout(() => {
     console.log('[AMP] Force cleanup - terminating all processes');

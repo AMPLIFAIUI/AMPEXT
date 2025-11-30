@@ -1,2 +1,2 @@
 @echo off
-node "%~dp0\desktop-ui\main.js" --native-host %*
+node "%~dp0amp-native-host.js" %*

@@ -1,10 +1,9 @@
 {
   "name": "com.ampiq.amp.native",
-  "description": "AMP Native Messaging Host",
-  "path": "S:\\A.M.P\\desktop-ui\\main.js",
-  "args": ["--native-host"],
+  "description": "AMP Native Messaging Host - Stores AI conversation memory",
+  "path": "amp-native-host.js",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://mfihgjbfjjabolcakcfjmbfcpgeiamam/"
+    "chrome-extension://hfbonpgnfcddledclfkcfpldkjabelel/"
   ]
 }

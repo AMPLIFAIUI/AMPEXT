@@ -23,7 +23,5 @@
 !macroend
 
 !macro customInstall
-  ; Copy cleanup script to installation directory if it exists
-  IfFileExists "cleanup.ps1" 0 +2
-    File "cleanup.ps1"
+  ; Installation setup - no additional files needed
 !macroend

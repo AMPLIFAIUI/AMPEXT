@@ -33,7 +33,7 @@ class AMPiQRenderer {
     
     this.connectToExtension();
     this.addActivityEntry('🟢 AMPiQ Desktop initialized and ready');
-    this.addActivityEntry('🔗 HTTP server active on port 3000');
+    this.addActivityEntry('🔗 Native messaging host active');
   }
 
   setupNavigation() {
@@ -1288,16 +1288,16 @@ class AMPiQRenderer {
   }
 
   connectToExtension() {
-    // Desktop app runs HTTP server - extensions connect via HTTP
-    this.addActivityEntry('🔄 Waiting for Chrome extension connection...');
-    
+    // Desktop app uses native messaging - extensions connect via chrome.runtime.connectNative()
+    this.addActivityEntry('🔄 Waiting for Chrome extension native messaging connection...');
+
     // Event listener is now set up in initializeApp() to avoid race conditions
     console.log('🔧 Renderer: connectToExtension called - events handled by global listener');
   }
 
   handleNativeMessage(message) {
-    console.log('🔧 Handling HTTP message:', message.type, message);
-    
+    console.log('🔧 Handling native message:', message.type, message);
+
     switch(message.type) {
       case 'pong':
         // Set connected for any pong response
@@ -1305,7 +1305,7 @@ class AMPiQRenderer {
         this.wasConnected = true;
         this.updateConnectionStatus(true);
         this.addActivityEntry('✅ Connected to Chrome extension');
-        this.addActivityEntry('📡 HTTP connection established');
+        this.addActivityEntry('📡 Native messaging connection established');
         break;
         
       case 'status_response':

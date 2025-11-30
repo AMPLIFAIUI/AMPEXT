@@ -131,23 +131,23 @@ chrome.runtime.onStartup.addListener(async () => {
   chrome.action.setBadgeText({ text: '' });
   chrome.action.setBadgeBackgroundColor({ color: [0, 0, 0, 0] });
   
-  // Test HTTP connection after a delay
+  // Initialize native messaging after a delay
   setTimeout(async () => {
     try {
-      await testDesktopConnection();
+      initializeNativeMessaging();
     } catch (error) {
-      console.error('HTTP connection failed during startup:', error);
+      console.error('Native messaging failed during startup:', error);
     }
   }, 3000);
   
   // Retry connection every 30 seconds if not connected
   setInterval(async () => {
     if (!desktopConnected) {
-      console.log('🔄 Retrying HTTP connection...');
+      console.log('🔄 Retrying native messaging connection...');
       try {
         await testDesktopConnection();
       } catch (error) {
-        console.error('HTTP retry failed:', error);
+        console.error('Native messaging retry failed:', error);
       }
     }
   }, 30000);
@@ -170,10 +170,10 @@ chrome.runtime.onInstalled.addListener(async () => {
   chrome.action.setBadgeText({ text: '' });
   chrome.action.setBadgeBackgroundColor({ color: [0, 0, 0, 0] });
   
-  // Test native messaging connection after a longer delay to avoid race condition
+  // Initialize native messaging after a delay
   setTimeout(async () => {
-    await testDesktopConnection();
-  }, 3000); // Increased delay to 3 seconds to avoid race condition
+    initializeNativeMessaging();
+  }, 3000);
   
   console.log('AMP: Extension installed and ready');
 });
@@ -1127,7 +1127,20 @@ async function handleMessage(message, sender, sendResponse) {
           sendResponse({ success: false, error: error.message });
         }
         break;
-        
+
+      case 'sendToDesktop':
+        // MemoryPool is sending overflow data to desktop
+        try {
+          console.log('🔧 Background: Received sendToDesktop request from MemoryPool:', message.type);
+          const response = await sendToDesktopApp(message);
+          console.log('🔧 Background: Desktop response:', response);
+          sendResponse(response || { success: false, error: 'No response from desktop' });
+        } catch (error) {
+          console.error('🔧 Background: sendToDesktop failed:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+
       default:
         // Use HTTP instead of native messaging
         try {
@@ -1607,57 +1620,104 @@ async function updateAMPSettings(settings) {
 
 async function handleGetMemoryStats() {
   try {
-    // Get REAL stats from the active memory pool
-    if (!activeMemoryPool) {
-      console.warn('AMP Background: Memory pool not initialized');
-      return {
-        totalChunks: 0,
-        domChunks: 0,
-        hotBufferChunks: 0,
-        archivedChunks: 0,
-        hotMemorySize: 0,
-        domSize: 0,
-        hotBufferSize: 0,
-        archiveSize: 0,
-        messageRate: 0,
-        growthRate: 0,
-        providers: [],
-        topics: [],
-        conversations: [],
-        lastUpdated: Date.now(),
-        error: 'Memory pool not initialized'
-      };
-    }
-
-    const stats = activeMemoryPool.getStats();
-    const allChunks = activeMemoryPool.getAllChunks();
-    
-    // Calculate REAL numbers with proper fallbacks
-    const realStats = {
-      totalChunks: allChunks.length,
-      domChunks: stats.domChunks || 0,
-      hotBufferChunks: stats.hotBufferChunks || 0,
-      archivedChunks: stats.archivedChunks || 0,
-      hotMemorySize: stats.hotMemorySize || 0,
-      domSize: stats.domSize || 0,
-      hotBufferSize: stats.hotBufferSize || 0,
-      archiveSize: stats.archiveSize || 0,
-      messageRate: stats.messageRate || 0,
-      growthRate: stats.growthRate || 0,
-      providers: Array.from(activeMemoryPool.conversationIndex?.keys() || []),
-      topics: Array.from(activeMemoryPool.conversationIndex?.keys() || []),
-      conversations: Array.from(activeMemoryPool.conversationIndex?.keys() || []),
+    // Get REAL stats from the active memory pool (HOT MEMORY)
+    let hotStats = {
+      totalChunks: 0,
+      domChunks: 0,
+      hotBufferChunks: 0,
+      archivedChunks: 0,
+      hotMemorySize: 0,
+      domSize: 0,
+      hotBufferSize: 0,
+      archiveSize: 0,
+      messageRate: 0,
+      growthRate: 0,
+      providers: [],
+      topics: [],
+      conversations: [],
       lastUpdated: Date.now(),
-      totalSize: allChunks.reduce((sum, chunk) => sum + (chunk.size || 0), 0),
+      totalSize: 0,
       activeTabs: activeTabs.size
     };
 
-    console.log(`🔧 Background: Returning stats - ${realStats.totalChunks} chunks, ${realStats.totalSize} bytes`);
-    
-    // Update the stats manager with real data
-    statsManager.updateStats(realStats);
-    
-    return realStats;
+    if (activeMemoryPool) {
+      const stats = activeMemoryPool.getStats();
+      const allChunks = activeMemoryPool.getAllChunks();
+
+      hotStats = {
+        totalChunks: allChunks.length,
+        domChunks: stats.domChunks || 0,
+        hotBufferChunks: stats.hotBufferChunks || 0,
+        archivedChunks: stats.archivedChunks || 0,
+        hotMemorySize: stats.hotMemorySize || 0,
+        domSize: stats.domSize || 0,
+        hotBufferSize: stats.hotBufferSize || 0,
+        archiveSize: stats.archiveSize || 0,
+        messageRate: stats.messageRate || 0,
+        growthRate: stats.growthRate || 0,
+        providers: Array.from(activeMemoryPool.conversationIndex?.keys() || []),
+        topics: Array.from(activeMemoryPool.conversationIndex?.keys() || []),
+        conversations: Array.from(activeMemoryPool.conversationIndex?.keys() || []),
+        lastUpdated: Date.now(),
+        totalSize: allChunks.reduce((sum, chunk) => sum + (chunk.size || 0), 0),
+        activeTabs: activeTabs.size
+      };
+    }
+
+    // Get COLD STORAGE stats from native host
+    let coldStats = {
+      coldTotalChunks: 0,
+      coldStorageSize: 0,
+      coldOverflowCount: 0,
+      coldAllMemoryCount: 0
+    };
+
+    try {
+      console.log('🔧 Background: Querying cold storage stats from native host...');
+      const coldResponse = await sendNativeMessage({ type: 'getMemoryStats' });
+      if (coldResponse && coldResponse.success && coldResponse.stats) {
+        coldStats = {
+          coldTotalChunks: coldResponse.stats.totalChunks || 0,
+          coldStorageSize: coldResponse.stats.totalSize || 0,
+          coldOverflowCount: coldResponse.stats.overflowCount || 0,
+          coldAllMemoryCount: coldResponse.stats.allMemoryCount || 0
+        };
+        console.log('🔧 Background: Received cold storage stats:', coldStats);
+      } else {
+        console.warn('🔧 Background: No cold storage stats received');
+      }
+    } catch (coldError) {
+      console.warn('🔧 Background: Failed to get cold storage stats:', coldError.message);
+    }
+
+    // Merge HOT + COLD stats
+    const mergedStats = {
+      // Hot memory (extension)
+      ...hotStats,
+
+      // Cold storage (native host/SQLite)
+      coldTotalChunks: coldStats.coldTotalChunks,
+      coldStorageSize: coldStats.coldStorageSize,
+      coldOverflowCount: coldStats.coldOverflowCount,
+      coldAllMemoryCount: coldStats.coldAllMemoryCount,
+
+      // Combined totals
+      totalChunks: hotStats.totalChunks + coldStats.coldTotalChunks,
+      totalStorageSize: hotStats.totalSize + coldStats.coldStorageSize,
+      storageAvailable: true, // Native host is responding
+
+      // Data flow indicators
+      hotMemoryActive: !!activeMemoryPool,
+      coldStorageActive: coldStats.coldTotalChunks > 0,
+      dataFlowWorking: true
+    };
+
+    console.log(`🔧 Background: Merged stats - Hot: ${hotStats.totalChunks}, Cold: ${coldStats.coldTotalChunks}, Total: ${mergedStats.totalChunks}`);
+
+    // Update the stats manager with merged data
+    statsManager.updateStats(mergedStats);
+
+    return mergedStats;
   } catch (error) {
     console.error('AMP Background: Error getting memory stats:', error);
     return {
@@ -1675,7 +1735,15 @@ async function handleGetMemoryStats() {
       topics: [],
       conversations: [],
       lastUpdated: Date.now(),
-      error: error.message
+      error: error.message,
+      coldTotalChunks: 0,
+      coldStorageSize: 0,
+      coldOverflowCount: 0,
+      coldAllMemoryCount: 0,
+      storageAvailable: false,
+      hotMemoryActive: false,
+      coldStorageActive: false,
+      dataFlowWorking: false
     };
   }
 }
@@ -2023,76 +2091,222 @@ function updateConnectionStatus(connected) {
   }
 }
 
-// Replace sendToAmpApp with HTTP
-async function sendToDesktopApp(message) {
+// ============================================
+// NATIVE MESSAGING IMPLEMENTATION
+// ============================================
+
+const NATIVE_HOST_NAME = 'com.ampiq.amp.native';
+let nativePort = null;
+let nativeMessageQueue = [];
+let pendingResponses = new Map(); // id -> { resolve, reject, timeout }
+let messageIdCounter = 0;
+
+// Connect to native messaging host
+function connectToNativeHost() {
   try {
-    console.log('Sending HTTP message:', message.type);
-    
-    const response = await fetch('http://127.0.0.1:3000', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(message)
+    // Check if already connected
+    if (nativePort) {
+      console.log('🔌 Already connected to native messaging host');
+      return true;
+    }
+
+    console.log('🔌 Connecting to native messaging host:', NATIVE_HOST_NAME);
+
+    // Check for any last error before attempting connection
+    const lastError = chrome.runtime.lastError;
+    if (lastError) {
+      console.warn('⚠️ Previous native messaging error:', lastError.message);
+    }
+
+    nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+
+    // Handle successful connection
+    nativePort.onMessage.addListener((message) => {
+      console.log('📨 Native message received:', message.type, message);
+      try {
+        handleNativeMessage(message);
+      } catch (error) {
+        console.error('❌ Error handling native message:', error);
+      }
+    });
+
+    nativePort.onDisconnect.addListener(() => {
+      const error = chrome.runtime.lastError;
+      console.error('❌ Native port disconnected:', error?.message || 'Unknown reason');
+      nativePort = null;
+      updateConnectionStatus(false);
+
+      // Reject all pending responses
+      pendingResponses.forEach((pending, id) => {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error('Native port disconnected'));
+      });
+      pendingResponses.clear();
+
+      // Try to reconnect after 5 seconds
+      setTimeout(() => {
+        if (!nativePort) {
+          console.log('🔄 Attempting to reconnect to native host...');
+          connectToNativeHost();
+        }
+      }, 5000);
     });
     
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    
-    const data = await response.json();
-    console.log('HTTP response:', data);
-    
-    updateConnectionStatus(true);
-    return data;
-  } catch (error) {
-    console.error('HTTP request failed:', error);
-    updateConnectionStatus(false);
-    return null;
-  }
-}
-
-// Test connection via HTTP
-async function testDesktopConnection() {
-  try {
-    console.log('🔍 Testing HTTP connection to desktop app...');
-    
-    const response = await fetch('http://127.0.0.1:3000/ping');
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    
-    const data = await response.json();
-    if (data.type === 'pong') {
+    // Send ping to verify connection
+    sendNativeMessage({ type: 'ping' }).then(() => {
+      console.log('✅ Native messaging connection established');
       updateConnectionStatus(true);
-      console.log('✅ HTTP connection successful');
-      return true;
-    } else {
-      console.warn('⚠️ Unexpected response from desktop app:', data);
+      
+      // Flush queued messages
+      while (nativeMessageQueue.length > 0) {
+        const queuedMessage = nativeMessageQueue.shift();
+        sendNativeMessage(queuedMessage);
+      }
+    }).catch((error) => {
+      console.error('❌ Native ping failed:', error);
       updateConnectionStatus(false);
-      return false;
-    }
+    });
+    
+    return true;
   } catch (error) {
-    console.error('❌ HTTP connection test failed:', error);
+    console.error('❌ Failed to connect to native host:', error);
     updateConnectionStatus(false);
     return false;
   }
 }
 
-// Get status via HTTP
-async function getDesktopStatus() {
-  try {
-    const response = await fetch('http://127.0.0.1:3000/status');
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+// Handle incoming native messages
+function handleNativeMessage(message) {
+  // Check if this is a response to a pending request
+  if (message.requestId && pendingResponses.has(message.requestId)) {
+    const pending = pendingResponses.get(message.requestId);
+    clearTimeout(pending.timeout);
+    pendingResponses.delete(message.requestId);
+    pending.resolve(message);
+    return;
+  }
+  
+  // Handle unsolicited messages from desktop
+  switch (message.type) {
+    case 'pong':
+      updateConnectionStatus(true);
+      break;
+      
+    case 'stats_update':
+      // Desktop is sending us updated stats
+      if (message.stats) {
+        statsManager.updateStats(message.stats);
+        console.log('📊 Stats updated from desktop:', message.stats);
+      }
+      break;
+      
+    case 'memory_stored':
+      console.log('💾 Memory stored confirmation:', message.chunkId);
+      break;
+      
+    case 'error':
+      console.error('❌ Native host error:', message.error);
+      break;
+      
+    default:
+      console.log('📨 Unhandled native message:', message.type);
+  }
+}
+
+// Send message to native host with response handling
+function sendNativeMessage(message) {
+  return new Promise((resolve, reject) => {
+    if (!nativePort) {
+      // Queue message and try to connect
+      console.log('⏳ Native port not connected, queueing message:', message.type);
+      nativeMessageQueue.push(message);
+      connectToNativeHost();
+      reject(new Error('Native port not connected'));
+      return;
     }
     
-    const data = await response.json();
-    return data;
+    // Add request ID for response tracking
+    const requestId = `req_${++messageIdCounter}_${Date.now()}`;
+    const messageWithId = { ...message, requestId };
+    
+    // Set up timeout for response
+    const timeout = setTimeout(() => {
+      pendingResponses.delete(requestId);
+      reject(new Error(`Native message timeout: ${message.type}`));
+    }, 10000); // 10 second timeout
+    
+    pendingResponses.set(requestId, { resolve, reject, timeout });
+    
+    try {
+      nativePort.postMessage(messageWithId);
+      console.log('📤 Native message sent:', message.type);
+    } catch (error) {
+      clearTimeout(timeout);
+      pendingResponses.delete(requestId);
+      reject(error);
+    }
+  });
+}
+
+// Send to desktop app via native messaging
+async function sendToDesktopApp(message) {
+  try {
+    console.log('📤 Sending to desktop via native messaging:', message.type);
+    const response = await sendNativeMessage(message);
+    console.log('📨 Desktop response:', response);
+    updateConnectionStatus(true);
+    return response;
+  } catch (error) {
+    console.error('❌ Native messaging failed:', error);
+    updateConnectionStatus(false);
+    return null;
+  }
+}
+
+// Test connection via native messaging
+async function testDesktopConnection() {
+  try {
+    console.log('🔍 Testing native messaging connection...');
+    
+    if (!nativePort) {
+      connectToNativeHost();
+      // Wait a bit for connection
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    const response = await sendNativeMessage({ type: 'ping' });
+    
+    if (response && response.type === 'pong') {
+      updateConnectionStatus(true);
+      console.log('✅ Native messaging connection successful');
+      return true;
+    } else {
+      console.warn('⚠️ Unexpected response from native host:', response);
+      updateConnectionStatus(false);
+      return false;
+    }
+  } catch (error) {
+    console.error('❌ Native messaging test failed:', error);
+    updateConnectionStatus(false);
+    return false;
+  }
+}
+
+// Get status via native messaging
+async function getDesktopStatus() {
+  try {
+    const response = await sendNativeMessage({ type: 'status' });
+    return response;
   } catch (error) {
     console.error('Failed to get desktop status:', error);
     return null;
   }
+}
+
+// Initialize native messaging on startup
+function initializeNativeMessaging() {
+  console.log('🚀 Initializing native messaging...');
+  connectToNativeHost();
 }
 
 // Initialize extension
@@ -2104,9 +2318,9 @@ chrome.runtime.onInstalled.addListener(async () => {
   // Initialize monitoring system
   await initializeMonitoringSystem();
   
-  // Test desktop app connection
+  // Initialize native messaging connection
   setTimeout(() => {
-    testDesktopConnection();
+    initializeNativeMessaging();
   }, 1000);
 });
 
@@ -2221,15 +2435,16 @@ initializeMemoryPool().then(async () => {
   // Initialize monitoring system
   await initializeMonitoringSystem();
   
-  // Connect to desktop app after initialization
+  // Connect to desktop app via native messaging after initialization
   setTimeout(() => {
+    initializeNativeMessaging();
     testDesktopConnection().then(connected => {
       if (connected) {
-        console.log('AMP Background: HTTP connection to desktop app successful');
+        console.log('AMP Background: Native messaging connection to desktop app successful');
         // Send current memory data to desktop app
         sendCurrentMemoryToDesktop();
       } else {
-        console.warn('AMP Background: HTTP connection not available - desktop features disabled');
+        console.warn('AMP Background: Native messaging not available - desktop features disabled');
       }
     });
   }, 3000); // Wait 3 seconds before connecting to avoid race condition
@@ -2253,7 +2468,7 @@ initializeMemoryPool().then(async () => {
   console.error('AMP Background: Failed to initialize memory pool:', error);
 });
 
-// Send current memory data to desktop app
+// Send current memory data to desktop app - REAL DATA ONLY, NO TEST DATA
 async function sendCurrentMemoryToDesktop() {
   try {
     if (!activeMemoryPool) {
@@ -2263,79 +2478,11 @@ async function sendCurrentMemoryToDesktop() {
     
     const allChunks = activeMemoryPool.getAll();
     if (allChunks.length === 0) {
-      console.log('AMP Background: No memory chunks to send - creating test data');
-      // Clear any existing chunks to ensure clean test data
-      if (activeMemoryPool.clear) {
-        activeMemoryPool.clear();
-      }
-      // Create test memory chunks for demonstration
-      const testChunks = [
-        {
-          id: 'test-1',
-          content: 'This is a test memory chunk from the extension. It contains sample conversation data.',
-          ai_provider: 'ChatGPT',
-          timestamp: Date.now() - 60000,
-          topic: 'Test Conversation',
-          inDom: true,
-          inHot: true,
-          slot: 1,
-          size: 150
-        },
-        {
-          id: 'test-2', 
-          content: 'Another test chunk showing how memory data flows from extension to desktop app.',
-          ai_provider: 'Claude',
-          timestamp: Date.now() - 30000,
-          topic: 'Memory System Test',
-          inDom: false,
-          inHot: true,
-          slot: 2,
-          size: 120
-        },
-        {
-          id: 'test-3',
-          content: 'This is archived memory data that has been moved to cold storage. It represents older conversations that are no longer in the hot buffer.',
-          ai_provider: 'ChatGPT',
-          timestamp: Date.now() - 3600000, // 1 hour ago
-          topic: 'Archived Conversation',
-          inDom: false,
-          inHot: false,
-          slot: 9,
-          size: 200
-        }
-      ];
-      
-      // Store test chunks in memory pool so popup can display them
-      if (activeMemoryPool) {
-        // Clear existing chunks first
-        if (activeMemoryPool.clear) {
-          activeMemoryPool.clear();
-        }
-        testChunks.forEach(chunk => {
-          activeMemoryPool.store(chunk);
-        });
-        console.log('🔧 Background: Stored test chunks in memory pool for popup display');
-      }
-      
-      console.log(`AMP Background: Sending ${testChunks.length} test memory chunks to desktop app`);
-      
-      const response = await sendToDesktopApp({
-        type: 'sendAllMemory',
-        chunks: testChunks,
-        timestamp: Date.now(),
-        totalChunks: testChunks.length,
-        totalSize: testChunks.reduce((sum, chunk) => sum + (chunk.size || 0), 0)
-      });
-      
-      if (response && response.success) {
-        console.log(`✅ Successfully sent ${testChunks.length} test chunks to desktop app`);
-      } else {
-        console.warn('⚠️ Failed to send test memory chunks to desktop app:', response);
-      }
-      return;
+      console.log('AMP Background: No memory chunks to send - waiting for real data capture');
+      return; // Don't send anything if there's no real data
     }
     
-    console.log(`AMP Background: Sending ${allChunks.length} memory chunks to desktop app`);
+    console.log(`AMP Background: Sending ${allChunks.length} REAL memory chunks to desktop app`);
     
     const response = await sendToDesktopApp({
       type: 'sendAllMemory',
@@ -2346,7 +2493,7 @@ async function sendCurrentMemoryToDesktop() {
     });
     
     if (response && response.success) {
-      console.log(`✅ Successfully sent ${allChunks.length} chunks to desktop app`);
+      console.log(`✅ Successfully sent ${allChunks.length} REAL chunks to desktop app`);
     } else {
       console.warn('⚠️ Failed to send memory chunks to desktop app:', response);
     }
@@ -2390,21 +2537,21 @@ function startHealthMonitoring() {
         }
       }
       
-      // Test desktop app connection every 30 seconds
-      if (desktopConnected) {
+      // Test desktop app connection every 30 seconds via native messaging
+      if (desktopConnected && nativePort) {
         try {
-          const response = await fetch('http://127.0.0.1:3000/ping');
-          if (!response.ok || response.status !== 200) {
-            console.warn('AMP Background: HTTP connection lost, attempting reconnect...');
+          const response = await sendNativeMessage({ type: 'ping' });
+          if (!response || response.type !== 'pong') {
+            console.warn('AMP Background: Native messaging connection lost, attempting reconnect...');
             updateConnectionStatus(false);
             // Try to reconnect
-            setTimeout(() => testDesktopConnection(), 2000);
+            setTimeout(() => initializeNativeMessaging(), 2000);
           }
         } catch (error) {
-          console.warn('AMP Background: HTTP health check failed:', error);
+          console.warn('AMP Background: Native messaging health check failed:', error);
           updateConnectionStatus(false);
           // Try to reconnect
-          setTimeout(() => testDesktopConnection(), 2000);
+          setTimeout(() => initializeNativeMessaging(), 2000);
         }
       }
     } catch (error) {

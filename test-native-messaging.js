@@ -11,11 +11,11 @@ console.log('=====================================');
 function testNativeHost() {
   console.log('📡 Testing native host communication...');
   
-  const hostPath = path.join(__dirname, 'desktop-ui', 'main.js');
+  const hostPath = path.join(__dirname, 'amp-native-host.js');
   console.log('Host path:', hostPath);
-  
-  // Spawn the native host process with --native-host flag
-  const host = spawn('node', [hostPath, '--native-host'], {
+
+  // Spawn the native host process
+  const host = spawn('node', [hostPath], {
     stdio: ['pipe', 'pipe', 'pipe']
   });
   
@@ -91,21 +91,26 @@ function testNativeHost() {
   // Wait a moment for host to start, then send test messages
   setTimeout(() => {
     console.log('📤 Sending ping test...');
-    sendMessage(host, { action: 'ping' });
-    
+    sendMessage(host, { type: 'ping' });
+
     setTimeout(() => {
       console.log('📤 Sending status test...');
-      sendMessage(host, { action: 'get_status' });
-      
+      sendMessage(host, { type: 'status' });
+
       setTimeout(() => {
         console.log('📤 Sending data storage test...');
-        sendMessage(host, { 
-          action: 'store_data', 
-          data: { 
-            type: 'test', 
+        sendMessage(host, {
+          type: 'sendAllMemory',
+          chunks: [{
+            id: 'test-chunk-1',
             content: 'Test message from native messaging test',
-            timestamp: Date.now()
-          }
+            ai_provider: 'Test',
+            timestamp: Date.now(),
+            size: 40
+          }],
+          timestamp: Date.now(),
+          totalChunks: 1,
+          totalSize: 40
         });
       }, 1000);
     }, 1000);
@@ -139,7 +144,7 @@ function sendMessage(host, message) {
 function testChromeExtension() {
   console.log('\n🌐 Testing Chrome extension connection...');
   console.log('Note: This requires the extension to be loaded in Chrome');
-  console.log('Extension ID: mfihgjbfjjabolcakcfjmbfcpgeiamam');
+  console.log('Extension ID: hfbonpgnfcddledclfkcfpldkjabelel');
   console.log('Native host: com.ampiq.amp.native');
   
   // Check if manifest exists

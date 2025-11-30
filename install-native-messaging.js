@@ -11,7 +11,7 @@ console.log('========================================');
 
 // Get current directory
 const currentDir = process.cwd();
-const hostPath = path.join(currentDir, 'desktop-ui', 'main.js');
+const hostPath = path.join(currentDir, 'amp-native-host.js');
 const manifestPath = path.join(currentDir, 'com.ampiq.amp.native.json');
 
 console.log('Current directory:', currentDir);
@@ -20,7 +20,7 @@ console.log('Manifest path:', manifestPath);
 
 // Check if files exist
 if (!fs.existsSync(hostPath)) {
-  console.error('❌ Desktop app file not found:', hostPath);
+  console.error('❌ Native host file not found:', hostPath);
   process.exit(1);
 }
 
@@ -33,19 +33,24 @@ if (!fs.existsSync(manifestPath)) {
 try {
   // Create a .bat wrapper for Windows to execute the Node.js script
   const batPath = path.join(currentDir, 'amp-native-host.bat');
-  const batContent = `@echo off\nnode "%~dp0\\desktop-ui\\main.js" --native-host %*`;
+  const batContent = `@echo off\nnode "%~dp0amp-native-host.js" %*`;
   fs.writeFileSync(batPath, batContent);
   console.log('✅ Created Windows batch wrapper:', batPath);
 
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  
+
   // Update path to the absolute path of the batch file
   manifest.path = batPath;
-  
+
+  // Use the actual Chrome extension ID provided by user
+  const realExtensionId = 'hfbonpgnfcddledclfkcfpldkjabelel';
+  manifest.allowed_origins = [`chrome-extension://${realExtensionId}/`];
+
   console.log('📋 Updated manifest:');
   console.log('  Name:', manifest.name);
   console.log('  Path:', manifest.path);
   console.log('  Type:', manifest.type);
+  console.log('  Extension ID:', realExtensionId);
   console.log('  Allowed origins:', manifest.allowed_origins);
   
   // Create the NativeMessagingHosts directory

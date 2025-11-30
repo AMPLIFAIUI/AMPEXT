@@ -1,189 +1,299 @@
-# AMP Architecture Rules & Development Guidelines
+# AMP Architecture Rules
 
-## 🏗️ **Core Architecture (ALWAYS FOLLOW)**
+## Complete System Architecture
 
-### **Core Philosophy: Index Until Needed**
+### Overview
+AMP (Automated Memory Persistence) is an "infinite context window" system for AI conversations. It captures, stores, and retrieves conversation data across multiple AI providers, enabling context persistence beyond the limitations of individual AI sessions.
+
+### Data Flow Diagram
 ```
-🌊 Continuous Indexing:  Capture & index all text flow automatically
-📊 Smart Storage:        Store everything in accessible layers (DOM → Buffers → Desktop)
-🎯 Retrieve on Demand:   Pull relevant context when user needs it
-⚡ Instant Access:       9-slot DOM for 0ms retrieval of recent content
-🔄 Waterfall System:     Old content cascades down storage layers naturally
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              BROWSER (Chrome)                                │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────┐     ┌────────────────────────────────────────────────┐ │
+│  │   AI Provider   │     │              Chrome Extension                   │ │
+│  │    Websites     │     │  ┌──────────────────────────────────────────┐  │ │
+│  │  ┌───────────┐  │     │  │         background.js (Service Worker)    │  │ │
+│  │  │  ChatGPT  │──┼─────┼─▶│  ┌────────────────────────────────────┐  │  │ │
+│  │  │  Claude   │  │     │  │  │     MemoryPool (5x1MB Hot Slots)   │  │  │ │
+│  │  │  Gemini   │  │     │  │  │  ┌──────────┐ ┌──────────────────┐ │  │  │ │
+│  │  │  Copilot  │  │     │  │  │  │ S1-S9    │ │   Dual Zipper    │ │  │  │ │
+│  │  │  Perplexity│ │     │  │  │  │Progression│ │ ┌──────┐┌─────┐ │ │  │  │ │
+│  │  │  etc...   │  │     │  │  │  └──────────┘ │ │ Fat  ││Thin │ │ │  │  │ │
+│  │  └───────────┘  │     │  │  │               │ │Zipper││Zipper│ │ │  │  │ │
+│  │        │        │     │  │  │               │ └──────┘└─────┘ │ │  │  │ │
+│  │        │        │     │  │  └────────────────────────────────────┘  │  │ │
+│  │        ▼        │     │  │                    │                      │  │ │
+│  │  ┌───────────┐  │     │  │                    │ Overflow             │  │ │
+│  │  │content.js │  │     │  │                    ▼                      │  │ │
+│  │  │MutationObs│──┼─────┼─▶│  ┌─────────────────────────────────────┐  │  │ │
+│  │  └───────────┘  │     │  │  │  Native Messaging (chrome.runtime)  │  │  │ │
+│  │                 │     │  │  │  connectNative('com.ampiq.amp.native')│  │  │ │
+│  │                 │     │  │  └─────────────────────────────────────┘  │  │ │
+│  └─────────────────┘     │  └────────────────────────────────────────────┘  │ │
+│                          │                      │                            │ │
+│                          │  ┌───────────────────┼───────────────────────┐   │ │
+│                          │  │     UI Components │                       │   │ │
+│                          │  │  ┌────────────────▼──────────────────┐   │   │ │
+│                          │  │  │         dropdown.js               │   │   │ │
+│                          │  │  │    (Stats, Connection Status)     │   │   │ │
+│                          │  │  └───────────────────────────────────┘   │   │ │
+│                          │  │  ┌───────────────────────────────────┐   │   │ │
+│                          │  │  │          amp-ui.js                │   │   │ │
+│                          │  │  │    (3D Zipper Visualization)      │   │   │ │
+│                          │  │  └───────────────────────────────────┘   │   │ │
+│                          │  └───────────────────────────────────────────┘   │ │
+│                          └──────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          │ Native Messaging (stdin/stdout)
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     NATIVE MESSAGING HOST (Node.js)                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                     amp-native-host.js                                │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │              Message Handlers:                                  │  │   │
+│  │  │    ping           - Connection test → pong                     │  │   │
+│  │  │    status         - Storage stats                              │  │   │
+│  │  │    sendAllMemory  - Store chunks → all_memory_saved            │  │   │
+│  │  │    overflow       - Store overflow chunk                       │  │   │
+│  │  │    getMemoryStats - Get storage statistics                     │  │   │
+│  │  │    search_memory  - Search stored data                         │  │   │
+│  │  │    get_memory_data - Retrieve stored chunks                    │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  │                               │                                       │   │
+│  │                               ▼                                       │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │              sqlite-storage.js (SQLite Database)                │  │   │
+│  │  │  Tables:                                                        │  │   │
+│  │  │    - conversations (id, provider, topic, timestamps)           │  │   │
+│  │  │    - memory_chunks (content, metadata, FTS indexed)            │  │   │
+│  │  │    - memory_search (FTS virtual table)                         │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                          │
+                                          │ File System / Shared SQLite
+                                          ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     DESKTOP APP (Electron) - OPTIONAL GUI                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                        main.js (Main Process)                         │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │              Reads same SQLite database                         │  │   │
+│  │  │              Provides GUI for viewing stored data               │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  │                               │                                       │   │
+│  │                               ▼                                       │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │              renderer.js (UI Process)                           │  │   │
+│  │  │    - Connection status display                                  │  │   │
+│  │  │    - Memory statistics                                          │  │   │
+│  │  │    - Conversation browser                                       │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### **Memory Hierarchy (Waterfall System)**
+## Core Components
+
+### 1. Memory Hierarchy
 ```
-1. DOM Layer (9 slots)     → 0ms instant access
-2. 5x1MB Buffer System     → Background script hot memory  
-3. Desktop SQLite Storage  → Native messaging overflow
-4. Archive/Cold Storage    → Long-term persistence
+DOM (9 slots) → Hot Memory (5x1MB slots) → Desktop SQLite (Cold Storage)
+     ↑                    ↑                        ↑
+  30 min TTL          24 hour TTL              Permanent
 ```
 
-### **File Responsibilities**
-- **`ext/content.js`** - S1-S9 progression, dual zipper capture, context injection
-- **`ext/background.js`** - Dual zipper system, native messaging, desktop integration
-- **`ext/utils.js`** - MemoryPool class, dual zipper logic, S1-S9 management
-- **`desktop-ui/`** - Desktop app with SQLite storage, live text viewer, injection GUI
-- **`amp-native-host.js`** - Bridge between Chrome extension and desktop app
+### 2. S1-S9 Progression System
+Each conversation chunk progresses through 9 stages:
+- **S1**: Raw capture from DOM
+- **S2-S8**: Progressive edits and refinements
+- **S9**: Canonical summary (final compressed form)
 
-## ⚡ **Buffer System Rules**
+### 3. Dual Zipper System
+- **Fat Zipper**: Stores full S1-S9 blocks (`blk057-chk019 → full data`)
+- **Thin Zipper**: Stores compressed S9 tags for O(1) lookup (`blk057-chk019-sq9 → tag`)
 
-### **5x1MB Buffer Configuration**
+### 4. Hot Pool Architecture
 ```javascript
-const BUFFER_SIZE_MB = 1;           // 1MB per buffer
-const NUM_BUFFERS = 5;              // 5 buffers total
-const BUFFER_SIZE_BYTES = 1048576;  // 1MB in bytes
-const OVERFLOW_THRESHOLD = 0.8;     // 80% triggers GUI overflow
-const LARGE_TEXT_THRESHOLD = 1000;  // Characters that trigger buffer system
+// 5x1MB cascading slots
+this.slots = [
+  { id: 1, maxSize: 1MB, chunks: Map() }, // Newest data
+  { id: 2, maxSize: 1MB, chunks: Map() }, // ↓
+  { id: 3, maxSize: 1MB, chunks: Map() }, // ↓
+  { id: 4, maxSize: 1MB, chunks: Map() }, // ↓
+  { id: 5, maxSize: 1MB, chunks: Map() }  // Oldest data → overflow to desktop
+];
+
+// Unified view for quick access
+this.hotPool = new Map(); // chunk_id → chunk
 ```
 
-### **Buffer Overflow Logic**
-1. **Text >1000 chars** → Activate buffer system
-2. **Buffer 80% full** → Auto-overflow to GUI via native messaging
-3. **All buffers full** → Emergency overflow to desktop SQLite
-4. **Background script** handles all buffer management
-5. **Content script** only triggers, never manages buffers directly
+## Communication Protocol
 
-## 🌊 **Waterfall Cascade Rules**
-
-### **Slot Management**
-- **Slots 1-9**: DOM instant access layer
-- **Slot 5 overflow**: Triggers desktop app storage
-- **Slot 9**: Archive slot for permanent storage
-- **Hot Buffer**: Temporary holding before desktop overflow
-- **DOM Mirror**: 1MB crash safety backup
-
-### **Flow Direction**
+### Extension → Desktop (HTTP)
 ```
-User Input/AI Output → Content Scanner → DOM Slots 1-9 → Hot Buffer → 5x1MB Buffers → Desktop SQLite
+Port: 3000
+Host: 127.0.0.1
+
+Endpoints:
+  GET  /ping          → { type: 'pong', timestamp }
+  GET  /status        → { connected, storageAvailable, stats }
+  GET  /conversations → { conversations: [...] }
+  GET  /chunks?id=X   → { chunks: [...] }
+  GET  /search?q=X    → { results: [...] }
+  GET  /recent        → { activity: [...] }
+  GET  /all-memory    → { data: { conversations, chunks, stats } }
+  POST /              → { type: 'store_data', data: {...} }
 ```
 
-## 📡 **Native Messaging Protocol**
+### Message Types (POST)
+```javascript
+// Store memory chunk
+{ type: 'store_data', data: { content, provider, topic, timestamp } }
 
-### **Message Types**
-- `overflow` - Single chunk overflow from slot 5
-- `sendAllMemory` - Bulk transfer to desktop GUI
-- `get_memory_data` - Request stored conversations
-- `inject_memory` - Inject content back to AI page
-- `status` - Health check and storage stats
+// Send all memory (bulk)
+{ type: 'sendAllMemory', chunks: [...] }
 
-### **Data Flow**
-1. **Content Script** captures text → sends to Background
-2. **Background Script** manages buffers → overflows to Native Host
-3. **Native Host** bridges to Desktop App
-4. **Desktop App** stores in SQLite → displays in GUI
-
-## 🔄 **Vertical Flow Capture System**
-
-### **Input Capture**
-- Monitor all text inputs (textareas, contenteditable)
-- Detect paste events for large text
-- Handle composition events (IME, autocomplete)
-- Adaptive timing based on text size
-
-### **Output Capture**
-- Watch for new AI response elements
-- Use MutationObserver for real-time detection
-- Capture streaming responses without timeouts
-- Handle large AI outputs with keep-alive mode
-
-### **Scanner Backup**
-- Continuous vertical page scanning
-- Only scan when page height increases
-- Adaptive intervals based on activity
-- Emergency capture for missed content
-
-## 🎯 **Performance Rules**
-
-### **Memory Limits**
-- **DOM Layer**: 9 slots max (instant access)
-- **Hot Memory**: 5MB max (5x1MB buffers)
-- **DOM Mirror**: 1MB max (crash safety)
-- **Desktop Storage**: Unlimited (SQLite)
-
-### **Timing Thresholds**
-- **Normal Scan**: 2000ms intervals
-- **Active Mode**: 500ms intervals
-- **Large Text**: Keep-alive mode with extended windows
-- **Idle Mode**: 3000ms intervals (power saving)
-
-## 🔒 **Security & Privacy Rules**
-
-### **Encryption Requirements**
-- **DOM Data**: Encrypted with rotating session keys
-- **Storage Data**: Military-grade encryption for sensitive content
-- **Native Messaging**: Secure bridge with validation
-- **User Control**: Frost viewer for privacy protection
-
-### **Data Handling**
-- **Plaintext in DOM**: Only for visible content (already on screen)
-- **Encrypted Storage**: All persistent data must be encrypted
-- **Session Keys**: Rotate every 10 minutes
-- **Local Only**: No external servers, all data stays local
-
-## 🚨 **Critical Development Rules**
-
-### **NEVER Break These:**
-1. **Always use existing MemoryPool** from `ext/utils.js`
-2. **Never duplicate buffer systems** - use the established 5x1MB system
-3. **Content script triggers only** - background script manages buffers
-4. **Follow waterfall cascade** - DOM → Buffers → Desktop → Archive
-5. **Maintain 9-slot DOM limit** - excess goes to hot buffer
-6. **Use semantic search** to verify architecture compliance
-
-### **Always Check:**
-- Does this follow the 5x1MB buffer system?
-- Am I using the existing MemoryPool class correctly?
-- Is the waterfall cascade logic preserved?
-- Are we maintaining the DOM 9-slot limit?
-- Is native messaging used for desktop communication?
-
-## 🛠️ **Integration Points**
-
-### **Extension to Desktop**
-- Background script → Native Host → Desktop SQLite
-- Automatic overflow when buffers fill
-- Bidirectional data flow for injection
-
-### **Cross-Tab Memory Sharing**
-- Background script broadcasts to all AI tabs
-- Provider-specific memory sharing
-- Real-time synchronization across sessions
-
-### **GUI Integration**
-- Live text viewer with real-time updates
-- Select and inject functionality
-- Provider filtering and search capabilities
-
-## 📑 **Index-Until-Needed Strategy**
-
-### **Automatic Indexing**
-- **Capture Everything**: Index all user input and AI output as it flows
-- **No Manual Saves**: System automatically captures and stores all conversation data
-- **Real-time Indexing**: Text is indexed the moment it appears on screen
-- **Background Processing**: Indexing happens without user intervention
-
-### **Smart Retrieval**
-- **On-Demand Access**: Content retrieved only when user needs it (search, inject, review)
-- **Context-Aware**: System knows what content is relevant for current conversation
-- **Instant Recent**: Last 9 interactions available in 0ms from DOM slots
-- **Historical Search**: Full conversation history searchable from desktop storage
-
-### **Layered Storage for Retrieval Speed**
-```
-Immediate Need (0ms):     DOM Slots 1-9 (last 9 interactions)
-Recent Need (1ms):        5x1MB Hot Buffers (recent session data)  
-Historical Need (10ms):   Desktop SQLite (full conversation history)
-Archive Need (100ms):    Cold storage (summarized old conversations)
+// Query data
+{ type: 'get_data', query: { conversation_id, search, recent, stats } }
 ```
 
-### **Index Categories**
-- **Provider Index**: Conversations grouped by AI provider (ChatGPT, Claude, etc.)
-- **Topic Index**: Content categorized by conversation topic/subject
-- **Time Index**: Chronological access to conversation timeline
-- **Content Index**: Full-text search across all captured conversations
-- **Context Index**: Related conversations for cross-reference injection
+## Key Files
 
----
+### Extension (`ext/`)
+| File | Purpose |
+|------|---------|
+| `background.js` | Service worker - memory management, HTTP client |
+| `content.js` | DOM injection - captures AI conversations |
+| `utils.js` | MemoryPool class, encryption, helpers |
+| `dropdown.js` | Popup UI - stats display |
+| `amp-ui.js` | 3D zipper visualization |
 
-**📝 NOTE**: Always reference this file before making architectural changes. Use semantic search to verify compliance with existing codebase patterns.
+### Desktop (`desktop-ui/`)
+| File | Purpose |
+|------|---------|
+| `main.js` | Electron main process - HTTP server |
+| `sqlite-storage.js` | SQLite database management |
+| `renderer.js` | Desktop UI |
+| `preload.js` | IPC bridge |
+
+## Critical Implementation Details
+
+### 1. MemoryPool Integration (background.js)
+```javascript
+// Import utils.js using importScripts (MV3 compatible)
+try {
+  importScripts('utils.js');
+  console.log('✅ utils.js imported successfully');
+} catch (error) {
+  console.error('❌ Failed to import utils.js:', error);
+}
+
+// Initialize real MemoryPool
+async function initializeMemoryPool() {
+  if (typeof MemoryPool !== 'undefined') {
+    activeMemoryPool = new MemoryPool();
+    await activeMemoryPool.loadFromStorage();
+  } else {
+    activeMemoryPool = createFallbackMemoryPool();
+  }
+}
+```
+
+### 2. hotPool Synchronization (utils.js)
+```javascript
+// When adding to slot, also add to hotPool
+async addToSlot(chunk) {
+  slot.chunks.set(chunk.id, chunk);
+  this.hotPool.set(chunk.id, chunk); // CRITICAL: unified view
+}
+
+// When overflowing to desktop, remove from hotPool
+async moveOldestToNextSlot(currentSlot, nextSlot) {
+  if (overflowing) {
+    await this.sendToDesktopOverflow(oldestChunk);
+    this.hotPool.delete(oldestChunk.id); // CRITICAL: cleanup
+  }
+}
+```
+
+### 3. Desktop Query (background.js)
+```javascript
+// Query desktop for cold storage data
+case 'getMemoryData':
+  // Get hot pool data
+  const hotData = Array.from(activeMemoryPool.hotPool.values());
+  
+  // Also query desktop for cold storage
+  const desktopResponse = await fetch('http://127.0.0.1:3000/all-memory');
+  const coldData = await desktopResponse.json();
+  
+  // Merge and return
+  sendResponse({ data: [...hotData, ...coldData.chunks] });
+```
+
+## STRICT DEVELOPMENT RULES
+
+### 1. NEVER ASSUME SUCCESS
+- **ALWAYS verify** terminal output shows actual success
+- **ALWAYS test** the connection after any changes
+- **NEVER say "should work"** without proof
+
+### 2. FIX ONE THING AT A TIME
+- **ONE issue per fix** - don't chase multiple problems
+- **TEST immediately** after each fix
+- **VERIFY the fix worked** before moving on
+
+### 3. ALWAYS CHECK TERMINAL FIRST
+- **READ terminal output** completely before responding
+- **IDENTIFY the actual error** from terminal logs
+- **IGNORE unrelated errors** (like cache errors)
+
+### 4. PORT RULES
+- **Extension connects to**: `http://127.0.0.1:3000`
+- **Desktop listens on**: `port 3000`
+- **NEVER use**: port 3456 (old incorrect value)
+
+### 5. SQLITE RULES
+- **ALWAYS rebuild** better-sqlite3 when version mismatch
+- **USE desktop-ui directory** for rebuilds
+- **IGNORE SQLite errors** if HTTP server starts successfully
+
+### 6. CONNECTION TESTING RULES
+- **OPEN extension dropdown** to trigger connection
+- **CHECK terminal** for connection messages
+- **VERIFY desktop app** shows "Connected"
+- **TEST stats display** in extension
+
+### 7. DEBUG LOGGING
+- **Look for 🔧 messages** in terminal
+- **Trace the flow**: Extension → HTTP → Desktop → SQLite
+- **Verify each step** before moving to next
+
+## Error Priority
+1. **Port conflicts** (EADDRINUSE) - kill existing process
+2. **SQLite version mismatch** (ERR_DLOPEN_FAILED) - rebuild
+3. **Connection issues** (no HTTP messages) - check port
+4. **UI display issues** (stats not showing) - check handlers
+
+## Success Criteria
+- ✅ Terminal shows: "HTTP server started successfully"
+- ✅ Extension connects: "Received ping request"
+- ✅ Desktop shows: "Connected" status
+- ✅ Stats display: Real numbers in extension dropdown
+- ✅ Memory persists: Data survives browser restart
+
+## Testing Workflow
+1. Start desktop app: `cd desktop-ui && npm start`
+2. Verify: "HTTP server running on http://127.0.0.1:3000"
+3. Reload extension in chrome://extensions/
+4. Open extension dropdown
+5. Check terminal for "Received ping request"
+6. Verify stats show real data (not zeros)
+7. Open AI chat, send message
+8. Check terminal for "store_data" message
+9. Verify chunk count increases
