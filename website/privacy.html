@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - AMP</title>
+  <meta name="description" content="Privacy Policy for AMP - Automatic Memory Persistence">
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #08080c;
+      --bg-secondary: #0e0e14;
+      --bg-tertiary: #16161f;
+      --text-primary: #e8e8ed;
+      --text-secondary: #9898a8;
+      --text-muted: #58586a;
+      --accent-cyan: #00d4ff;
+      --border-color: rgba(255,255,255,0.06);
+      --gradient-main: linear-gradient(135deg, #00d4ff 0%, #ff00aa 50%, #00ff88 100%);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      padding: 1rem 2rem;
+      background: rgba(8,8,12,0.9);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .nav-content {
+      max-width: 800px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+    }
+
+    .logo svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    .logo-text {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .content {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 8rem 2rem 4rem;
+    }
+
+    h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    .last-updated {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 3rem;
+    }
+
+    h2 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      margin-top: 2.5rem;
+      margin-bottom: 1rem;
+      color: var(--text-primary);
+    }
+
+    p {
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+    }
+
+    ul {
+      color: var(--text-secondary);
+      margin-bottom: 1rem;
+      padding-left: 1.5rem;
+    }
+
+    li {
+      margin-bottom: 0.5rem;
+    }
+
+    strong {
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+
+    a {
+      color: var(--accent-cyan);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .highlight {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin: 1.5rem 0;
+    }
+
+    .highlight p {
+      margin: 0;
+    }
+
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 2rem;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="nav-content">
+      <a href="index.html" class="logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="gradient" x1="2" y1="2" x2="126" y2="126" gradientUnits="userSpaceOnUse" gradientTransform="scale(0.25)">
+              <stop offset="0%" stop-color="red"/>
+              <stop offset="14%" stop-color="orange"/>
+              <stop offset="28%" stop-color="yellow"/>
+              <stop offset="42%" stop-color="lime"/>
+              <stop offset="57%" stop-color="cyan"/>
+              <stop offset="71%" stop-color="blue"/>
+              <stop offset="85%" stop-color="magenta"/>
+              <stop offset="100%" stop-color="red"/>
+              <animateTransform attributeName="gradientTransform" type="rotate" from="0 16 16" to="360 16 16" dur="6s" repeatCount="indefinite"/>
+            </linearGradient>
+          </defs>
+          <rect x="7.31" y="-15.13" width="30.63" height="30.63" rx="15.32" fill="#030303" transform="rotate(44.53)"/>
+          <path fill-rule="evenodd" clip-rule="evenodd" d="m 14.617,17.437 c 0.431,0.017 0.869,0.037 1.314,0.057 l 0.481,0.022 c 0.341,0.016 0.686,0.032 1.033,0.046 l 0.142,0.006 c 4.484,0.173 9.453,0.025 13.206,-3.775 l -2.128,-2.102 c -0.757,0.766 -1.58,1.34 -2.468,1.767 L 18.415,5.771 C 18.831,4.879 19.395,4.048 20.151,3.282 L 18.023,1.18 C 14.27,4.98 14.184,9.951 14.413,14.432 9.929,14.259 4.96,14.407 1.206,18.208 l 2.129,2.102 c 0.756,-0.766 1.58,-1.34 2.467,-1.767 l 7.783,7.686 c -0.416,0.893 -0.98,1.723 -1.737,2.49 l 2.129,2.102 c 2.93,-2.968 3.625,-6.649 3.68,-10.253 -0.438,-0.017 -0.861,-0.037 -1.266,-0.056 l -0.599,-0.028 c -0.39,-0.018 -0.768,-0.034 -1.132,-0.048 -0.01,0.864 -0.056,1.695 -0.161,2.492 L 9.093,17.588 C 10.771,17.345 12.606,17.359 14.582,17.436 Z m 2.884,-8.363 5.406,5.339 c -1.678,0.242 -3.513,0.228 -5.489,0.152 -0.101,-1.975 -0.138,-3.81 0.083,-5.491 z" fill="#ffffff"/>
+          <circle cx="16" cy="16" fill="none" stroke="url(#gradient)" stroke-width="1" r="15.5">
+            <animate attributeName="stroke-dashoffset" from="0" to="502" dur="4s" repeatCount="indefinite"/>
+          </circle>
+        </svg>
+        <span class="logo-text">AMP</span>
+      </a>
+      <div class="nav-links">
+        <a href="index.html">Back to Home</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="content">
+    <h1>Privacy Policy</h1>
+    <p class="last-updated">Last updated: December 2, 2025</p>
+
+    <div class="highlight">
+      <p><strong>Summary:</strong> AMP stores all data locally on your device. We do not collect, transmit, or sell any user data. Your AI conversations remain private and under your control.</p>
+    </div>
+
+    <h2>Introduction</h2>
+    <p>AMP ("Automatic Memory Persistence") is a browser extension and optional desktop application developed by AMPiQ. This privacy policy explains how we handle user data.</p>
+
+    <h2>Data Collection</h2>
+    <p>AMP collects minimal data necessary to provide the service. The extension captures AI conversation content solely for local storage on your device.</p>
+    
+    <p><strong>What AMP captures locally:</strong></p>
+    <ul>
+      <li>Text content from AI chat conversations (ChatGPT, Claude, Gemini, Perplexity, etc.)</li>
+      <li>Timestamps of when conversations occurred</li>
+      <li>Metadata such as AI platform name and conversation topics</li>
+      <li>Your license key (stored locally for validation)</li>
+    </ul>
+
+    <p><strong>What AMP sends to our servers:</strong></p>
+    <ul>
+      <li>License key validation requests (to verify your subscription status)</li>
+      <li>No conversation content or personal data is transmitted</li>
+    </ul>
+
+    <p><strong>What AMP does NOT collect:</strong></p>
+    <ul>
+      <li>Browsing history outside of supported AI platforms</li>
+      <li>Passwords or authentication credentials</li>
+      <li>Financial or payment information (handled by our payment processor)</li>
+      <li>Location data</li>
+      <li>Any data from websites other than supported AI chat platforms</li>
+    </ul>
+
+    <h2>Payment Processing</h2>
+    <p>Payments are processed by Stripe, a trusted third-party payment processor. When you make a purchase:</p>
+    <ul>
+      <li>Your payment information is collected and processed directly by Stripe</li>
+      <li>We receive your email address and license key information only</li>
+      <li>We do not receive, store, or have access to your credit card numbers, CVV, or full payment details</li>
+      <li>All payment data is handled securely by Stripe in compliance with PCI-DSS standards</li>
+      <li>Stripe's privacy policy applies to payment data: <a href="https://stripe.com/privacy" target="_blank">stripe.com/privacy</a></li>
+    </ul>
+
+    <h2>Data Storage</h2>
+    <p>All captured data is stored locally:</p>
+    <ul>
+      <li><strong>Browser Extension:</strong> Data is stored in Chrome's local storage (chrome.storage.local) on your device</li>
+      <li><strong>Desktop Application:</strong> Data is stored in a local SQLite database file on your computer</li>
+    </ul>
+    <p>No data is transmitted to external servers, cloud services, or third parties.</p>
+
+    <h2>Data Transmission</h2>
+    <p>AMP does not transmit any user data over the internet. The only network communication that occurs is:</p>
+    <ul>
+      <li>Between the browser extension and the locally installed desktop application (via native messaging on localhost only)</li>
+    </ul>
+    <p>This communication happens entirely on your local machine and does not involve any external servers.</p>
+
+    <h2>Third-Party Services</h2>
+    <p>AMP does not integrate with any third-party analytics, advertising, or data collection services. We do not use:</p>
+    <ul>
+      <li>Google Analytics or similar tracking</li>
+      <li>Advertising networks</li>
+      <li>User behavior tracking</li>
+      <li>Crash reporting services that transmit data</li>
+    </ul>
+
+    <h2>Data Sharing</h2>
+    <p>We do not sell, trade, or transfer your data to any third parties. Since all data remains on your device, we have no access to it.</p>
+
+    <h2>Data Security</h2>
+    <p>Your data is protected by:</p>
+    <ul>
+      <li>Local-only storage (data never leaves your device)</li>
+      <li>Chrome's built-in extension security sandbox</li>
+      <li>Optional encryption for sensitive data in memory</li>
+    </ul>
+
+    <h2>User Control</h2>
+    <p>You have complete control over your data:</p>
+    <ul>
+      <li><strong>View:</strong> Access all captured data through the extension popup or desktop app</li>
+      <li><strong>Delete:</strong> Clear all stored data at any time through the extension settings</li>
+      <li><strong>Export:</strong> Export your data for backup or transfer</li>
+      <li><strong>Disable:</strong> Pause or disable capture at any time</li>
+    </ul>
+
+    <h2>Children's Privacy</h2>
+    <p>AMP is not directed at children under 13 years of age. We do not knowingly collect data from children.</p>
+
+    <h2>Changes to This Policy</h2>
+    <p>We may update this privacy policy from time to time. Any changes will be posted on this page with an updated revision date.</p>
+
+    <h2>Contact</h2>
+    <p>If you have questions about this privacy policy, please contact us at:</p>
+    <p><a href="mailto:ampi@ampiq.info">ampi@ampiq.info</a></p>
+
+    <div class="highlight">
+      <p><strong>Your privacy is guaranteed:</strong> AMP is designed with privacy as a core principle. All data stays on your device, under your control, always.</p>
+    </div>
+  </div>
+
+  <footer>
+    2025 AMPiQ. All rights reserved.
+  </footer>
+</body>
+</html>
+

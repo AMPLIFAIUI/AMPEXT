@@ -112,7 +112,7 @@ function createMenu() {
               type: 'info',
               title: 'About AMPiQ',
               message: 'AMPiQ - Advanced Memory Persistence Interface',
-              detail: 'Version 2.0.0\n\nAdvanced memory management for AI conversations.'
+              detail: 'Version 4.0.0\n\nAdvanced memory management for AI conversations.'
             });
           }
         }

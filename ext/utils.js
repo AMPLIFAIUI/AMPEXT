@@ -1,7 +1,16 @@
 // © 2025 AMPIQ All rights reserved.
 // AMP Memory Management with Hot Memory Priority Architecture
 // Dual Zipper Memory System Implementation
-// Version: 2.0.1 - Cache busted
+// Version: 4.0.0 - Production
+
+// Production logging - set to false to disable debug logs
+const AMP_DEBUG = false;
+const log = (...args) => AMP_DEBUG && console.log('[AMP Utils]', ...args);
+const logError = (...args) => console.error('[AMP Utils]', ...args);
+
+// IMPORTANT: Detect if we're in a Service Worker (no window object)
+const isServiceWorker = typeof window === 'undefined';
+const globalContext = isServiceWorker ? self : window;
 
 // Hot Memory Architecture:
 // - DOM Layer: 9 hot slots (instant 0ms access)
@@ -34,7 +43,7 @@ class DOMEncryption {
     this.keyRotationInterval = setInterval(() => {
       const oldKey = this.key;
       this.key = this.generateSessionKey();
-      console.log('AMP: Session key rotated for enhanced security');
+      log('AMP: Session key rotated for enhanced security');
       
       // Clear old key from memory (strings are immutable, so we can't modify them)
       // Just let the old key be garbage collected
@@ -63,7 +72,7 @@ class DOMEncryption {
       // Return salt + encrypted data
       return saltHex + ':' + btoa(result);
     } catch (error) {
-      console.error('Encryption failed:', error);
+      logError('Encryption failed:', error);
       return 'AMP_ENCRYPTED_ERROR';
     }
   }
@@ -94,7 +103,7 @@ class DOMEncryption {
       const text = atob(result);
       return JSON.parse(text);
     } catch (error) {
-      console.error('Decryption failed - data may be corrupted or key rotated:', error);
+      logError('Decryption failed - data may be corrupted or key rotated:', error);
       return null;
     }
   }
@@ -129,6 +138,9 @@ class DevToolsProtection {
   }
   
   startMonitoring() {
+    // Skip monitoring in Service Worker context (no window)
+    if (isServiceWorker) return;
+    
     let devtools = { open: false, orientation: null };
     const threshold = 160;
     
@@ -155,10 +167,13 @@ const devToolsProtection = new DevToolsProtection();
 
 // Make functions available globally for content scripts
 function getAIProvider() {
+  // In Service Worker context, return unknown (provider detection happens in content script)
+  if (isServiceWorker) return 'unknown';
+  
   const url = window.location.href;
   const hostname = window.location.hostname;
   
-  if (url.includes('chat.openai.com') || hostname.includes('openai.com')) {
+  if (url.includes('chat.openai.com') || url.includes('chatgpt.com') || hostname.includes('openai.com')) {
     return 'chatgpt';
   } else if (url.includes('claude.ai') || hostname.includes('anthropic.com')) {
     return 'claude';
@@ -192,6 +207,9 @@ function getTabId() {
 }
 
 function getTopic() {
+  // In Service Worker context, return default topic
+  if (isServiceWorker) return 'conversation';
+  
   // Extract topic from page title or conversation context
   const title = document.title;
   if (title && title !== 'ChatGPT' && title !== 'Claude') {
@@ -201,21 +219,85 @@ function getTopic() {
 }
 
 // Make functions globally available for content scripts
-window.getAIProvider = getAIProvider;
-window.getTabId = getTabId;
-window.getTopic = getTopic;
+// Export to global context (window for content scripts, self for service worker)
+if (!isServiceWorker) {
+  window.getAIProvider = getAIProvider;
+  window.getTabId = getTabId;
+  window.getTopic = getTopic;
+}
 
 // Optimized Memory Pool for Hot Memory Priority
 class MemoryPool {
+  // Check if desktop app is connected
+  // When desktop app is available, use minimal browser memory (5x1MB)
+  // Data cascades to the Electron app for persistent storage on PC
+  desktopAppConnected = false;
+  
+  // Set desktop connection status
+  setDesktopConnected(connected) {
+    this.desktopAppConnected = connected;
+    if (connected) {
+      log('📊 Desktop app connected - using minimal browser memory (5x1MB), data stored on PC');
+    } else {
+      log('📊 Desktop app not connected - using adaptive browser memory');
+    }
+  }
+  
+  // Determine optimal slot size based on:
+  // 1. Desktop app connection (if connected, use minimal 1MB slots)
+  // 2. System capabilities (if no desktop, scale based on RAM)
+  getOptimalSlotSize() {
+    // If desktop app is connected, use minimal memory
+    // Data will be cascaded to the Electron app for storage on PC
+    if (this.desktopAppConnected) {
+      log('📊 Using minimal slot size (1MB) - desktop app handles storage');
+      return 1 * 1024 * 1024; // 1MB per slot = 5MB total
+    }
+    
+    try {
+      // No desktop app - scale based on system capabilities
+      if (typeof navigator !== 'undefined' && navigator.deviceMemory) {
+        const memoryGB = navigator.deviceMemory;
+        
+        if (memoryGB >= 16) {
+          // High-end system: 10MB per slot = 50MB total
+          return 10 * 1024 * 1024;
+        } else if (memoryGB >= 8) {
+          // Good system: 5MB per slot = 25MB total
+          return 5 * 1024 * 1024;
+        } else if (memoryGB >= 4) {
+          // Mid-range: 2MB per slot = 10MB total
+          return 2 * 1024 * 1024;
+        } else {
+          // Low-end: 1MB per slot = 5MB total
+          return 1 * 1024 * 1024;
+        }
+      }
+    } catch (e) {
+      // API not available
+    }
+    
+    // Default: 1MB per slot = 5MB total (conservative default)
+    return 1 * 1024 * 1024;
+  }
+  
   constructor() {
-    // 5x1MB hot memory pools with cascading overflow
+    // Start with minimal memory - will scale up if no desktop app detected
+    // Default: 5x1MB = 5MB hot memory (browser acts as temporary buffer)
+    const slotSize = this.getOptimalSlotSize();
+    
     this.slots = [
-      { id: 1, maxSize: 1 * 1024 * 1024, currentSize: 0, chunks: new Map() }, // 1MB
-      { id: 2, maxSize: 1 * 1024 * 1024, currentSize: 0, chunks: new Map() }, // 1MB
-      { id: 3, maxSize: 1 * 1024 * 1024, currentSize: 0, chunks: new Map() }, // 1MB
-      { id: 4, maxSize: 1 * 1024 * 1024, currentSize: 0, chunks: new Map() }, // 1MB
-      { id: 5, maxSize: 1 * 1024 * 1024, currentSize: 0, chunks: new Map() }  // 1MB
+      { id: 1, maxSize: slotSize, currentSize: 0, chunks: new Map() },
+      { id: 2, maxSize: slotSize, currentSize: 0, chunks: new Map() },
+      { id: 3, maxSize: slotSize, currentSize: 0, chunks: new Map() },
+      { id: 4, maxSize: slotSize, currentSize: 0, chunks: new Map() },
+      { id: 5, maxSize: slotSize, currentSize: 0, chunks: new Map() }
     ];
+    
+    log(`📊 MemoryPool initialized with ${(slotSize / 1024 / 1024).toFixed(1)}MB per slot (${(slotSize * 5 / 1024 / 1024).toFixed(1)}MB total)`);
+    
+    // Store slot size for reference
+    this.slotSize = slotSize;
     
     // CRITICAL: hotPool is the unified view of all chunks across slots
     // Used by getConversation(), searchInConversations(), etc.
@@ -238,9 +320,9 @@ class MemoryPool {
     this.providerIndex = new Map(); // provider -> [conversation_ids]
     this.topicIndex = new Map(); // topic -> [conversation_ids]
     
-    // Total memory limits
-    this.maxTotalSize = 5 * 1024 * 1024; // 5MB total hot memory
-    this.maxDomMirrorSize = 1 * 1024 * 1024; // 1MB DOM safety backup
+    // Total memory limits - adaptive based on slot size
+    this.maxTotalSize = slotSize * 5; // 5 slots worth of memory
+    this.maxDomMirrorSize = Math.min(slotSize, 2 * 1024 * 1024); // Up to 2MB DOM safety backup
     this.maxConversations = 5000; // Reasonable conversation limit
     
     // Error handling and recovery
@@ -283,13 +365,13 @@ class MemoryPool {
   // Load 5x1MB hot memory pool from storage with robust error handling
   async loadFromStorage() {
     if (!chrome || !chrome.storage) {
-      console.error('AMP: Chrome storage not available');
+      logError('AMP: Chrome storage not available');
       return false;
     }
 
     try {
       this.isRecovering = true;
-      console.log('AMP: Loading 5x1MB hot memory pool from storage...');
+      log('AMP: Loading 5x1MB hot memory pool from storage...');
       
       // Load all data from chrome.storage.local
       const result = await chrome.storage.local.get([
@@ -340,9 +422,9 @@ class MemoryPool {
             }
           }
           
-          console.log(`AMP: Loaded ${loadedCount} chunks to slots (${errorCount} errors)`);
+          log(`AMP: Loaded ${loadedCount} chunks to slots (${errorCount} errors)`);
         } catch (slotsError) {
-          console.error('AMP: Failed to load slots:', slotsError);
+          logError('AMP: Failed to load slots:', slotsError);
           this.storageState.loadErrors++;
         }
       }
@@ -363,9 +445,9 @@ class MemoryPool {
             }
           });
           
-          console.log(`AMP: Loaded ${this.domMirror.size} chunks to DOM mirror`);
+          log(`AMP: Loaded ${this.domMirror.size} chunks to DOM mirror`);
         } catch (mirrorError) {
-          console.error('AMP: Failed to load DOM mirror:', mirrorError);
+          logError('AMP: Failed to load DOM mirror:', mirrorError);
         }
       }
       
@@ -373,27 +455,27 @@ class MemoryPool {
       if (result.amp_conversation_index) {
         try {
           this.conversationIndex = new Map(Object.entries(result.amp_conversation_index));
-          console.log(`AMP: Loaded conversation index (${this.conversationIndex.size} conversations)`);
+          log(`AMP: Loaded conversation index (${this.conversationIndex.size} conversations)`);
         } catch (indexError) {
-          console.error('AMP: Failed to load conversation index:', indexError);
+          logError('AMP: Failed to load conversation index:', indexError);
         }
       }
       
       if (result.amp_provider_index) {
         try {
           this.providerIndex = new Map(Object.entries(result.amp_provider_index));
-          console.log(`AMP: Loaded provider index (${this.providerIndex.size} providers)`);
+          log(`AMP: Loaded provider index (${this.providerIndex.size} providers)`);
         } catch (indexError) {
-          console.error('AMP: Failed to load provider index:', indexError);
+          logError('AMP: Failed to load provider index:', indexError);
         }
       }
       
       if (result.amp_topic_index) {
         try {
           this.topicIndex = new Map(Object.entries(result.amp_topic_index));
-          console.log(`AMP: Loaded topic index (${this.topicIndex.size} topics)`);
+          log(`AMP: Loaded topic index (${this.topicIndex.size} topics)`);
         } catch (indexError) {
-          console.error('AMP: Failed to load topic index:', indexError);
+          logError('AMP: Failed to load topic index:', indexError);
         }
       }
       
@@ -401,9 +483,9 @@ class MemoryPool {
       if (result.amp_overflow_queue) {
         try {
           this.overflowQueue = result.amp_overflow_queue;
-          console.log(`AMP: Loaded overflow queue (${this.overflowQueue.length} items)`);
+          log(`AMP: Loaded overflow queue (${this.overflowQueue.length} items)`);
         } catch (overflowError) {
-          console.error('AMP: Failed to load overflow queue:', overflowError);
+          logError('AMP: Failed to load overflow queue:', overflowError);
         }
       }
       
@@ -411,22 +493,22 @@ class MemoryPool {
       if (result.amp_storage_state) {
         try {
           this.storageState = { ...this.storageState, ...result.amp_storage_state };
-          console.log('AMP: Loaded storage state');
+          log('AMP: Loaded storage state');
         } catch (stateError) {
-          console.error('AMP: Failed to load storage state:', stateError);
+          logError('AMP: Failed to load storage state:', stateError);
         }
       }
       
       this.storageState.lastLoad = Date.now();
       this.storageState.totalLoaded = loadedCount;
       
-      console.log(`AMP: ✅ 5x1MB hot memory pool loaded successfully`);
-      console.log(`AMP: 📊 Slots: ${this.getTotalChunks()} chunks, DOM mirror: ${this.domMirror.size} chunks`);
+      log(`AMP: ✅ 5x1MB hot memory pool loaded successfully`);
+      log(`AMP: 📊 Slots: ${this.getTotalChunks()} chunks, DOM mirror: ${this.domMirror.size} chunks`);
       
       return true;
       
     } catch (error) {
-      console.error('AMP: ❌ Critical error loading from storage:', error);
+      logError('AMP: ❌ Critical error loading from storage:', error);
       this.storageState.loadErrors++;
       this.errorCount++;
       this.lastErrorTime = Date.now();
@@ -443,12 +525,12 @@ class MemoryPool {
   // Save 5x1MB hot memory pool to storage with robust error handling and immediate persistence
   async saveToStorage() {
     if (!chrome || !chrome.storage) {
-      console.error('AMP: Chrome storage not available');
+      logError('AMP: Chrome storage not available');
       return false;
     }
 
     try {
-      console.log('AMP: Saving 5x1MB hot memory pool to storage...');
+      log('AMP: Saving 5x1MB hot memory pool to storage...');
       
       // Prepare all data for storage
       const storageData = {};
@@ -477,9 +559,9 @@ class MemoryPool {
         }
         
         storageData.amp_slots = slotsObj;
-        console.log(`AMP: Prepared ${savedCount} chunks for slots storage (${errorCount} errors)`);
+        log(`AMP: Prepared ${savedCount} chunks for slots storage (${errorCount} errors)`);
       } catch (slotsError) {
-        console.error('AMP: Failed to prepare slots for storage:', slotsError);
+        logError('AMP: Failed to prepare slots for storage:', slotsError);
         this.storageState.saveErrors++;
       }
       
@@ -496,9 +578,9 @@ class MemoryPool {
         }
         
         storageData.amp_dom_mirror = domMirrorObj;
-        console.log(`AMP: Prepared ${this.domMirror.size} chunks for DOM mirror storage`);
+        log(`AMP: Prepared ${this.domMirror.size} chunks for DOM mirror storage`);
       } catch (mirrorError) {
-        console.error('AMP: Failed to prepare DOM mirror for storage:', mirrorError);
+        logError('AMP: Failed to prepare DOM mirror for storage:', mirrorError);
       }
       
       // Save indexes
@@ -506,17 +588,17 @@ class MemoryPool {
         storageData.amp_conversation_index = Object.fromEntries(this.conversationIndex);
         storageData.amp_provider_index = Object.fromEntries(this.providerIndex);
         storageData.amp_topic_index = Object.fromEntries(this.topicIndex);
-        console.log('AMP: Prepared indexes for storage');
+        log('AMP: Prepared indexes for storage');
       } catch (indexError) {
-        console.error('AMP: Failed to prepare indexes for storage:', indexError);
+        logError('AMP: Failed to prepare indexes for storage:', indexError);
       }
       
       // Save overflow queue
       try {
         storageData.amp_overflow_queue = this.overflowQueue;
-        console.log(`AMP: Prepared overflow queue for storage (${this.overflowQueue.length} items)`);
+        log(`AMP: Prepared overflow queue for storage (${this.overflowQueue.length} items)`);
       } catch (overflowError) {
-        console.error('AMP: Failed to prepare overflow queue for storage:', overflowError);
+        logError('AMP: Failed to prepare overflow queue for storage:', overflowError);
       }
       
       // Save storage state
@@ -524,9 +606,9 @@ class MemoryPool {
         this.storageState.lastSave = Date.now();
         this.storageState.totalSaved = savedCount;
         storageData.amp_storage_state = this.storageState;
-        console.log('AMP: Prepared storage state');
+        log('AMP: Prepared storage state');
       } catch (stateError) {
-        console.error('AMP: Failed to prepare storage state:', stateError);
+        logError('AMP: Failed to prepare storage state:', stateError);
       }
       
       // Save dual zipper data
@@ -537,9 +619,9 @@ class MemoryPool {
         storageData.amp_current_squares = Array.from(this.currentSquares.entries());
         storageData.amp_block_counter = this.blockCounter;
         storageData.amp_chunk_counter = this.chunkCounter;
-        console.log('AMP: Prepared dual zipper data for storage');
+        log('AMP: Prepared dual zipper data for storage');
       } catch (zipperError) {
-        console.error('AMP: Failed to prepare dual zipper data for storage:', zipperError);
+        logError('AMP: Failed to prepare dual zipper data for storage:', zipperError);
       }
       
       // Save to chrome.storage.local with retry logic
@@ -551,10 +633,10 @@ class MemoryPool {
         try {
           await chrome.storage.local.set(storageData);
           saveSuccess = true;
-          console.log(`AMP: ✅ Full 250MB hot pool saved successfully (attempt ${retryCount + 1})`);
+          log(`AMP: ✅ Full 250MB hot pool saved successfully (attempt ${retryCount + 1})`);
         } catch (saveError) {
           retryCount++;
-          console.error(`AMP: Save attempt ${retryCount} failed:`, saveError);
+          logError(`AMP: Save attempt ${retryCount} failed:`, saveError);
           
           if (retryCount < maxRetries) {
             // Wait before retry (exponential backoff)
@@ -566,14 +648,14 @@ class MemoryPool {
       }
       
       if (saveSuccess) {
-        console.log(`AMP: 📊 Storage stats - Saved: ${savedCount} chunks, Errors: ${errorCount}`);
+        log(`AMP: 📊 Storage stats - Saved: ${savedCount} chunks, Errors: ${errorCount}`);
         return true;
       } else {
         throw new Error('All save attempts failed');
       }
       
     } catch (error) {
-      console.error('AMP: ❌ Critical error saving to storage:', error);
+      logError('AMP: ❌ Critical error saving to storage:', error);
       this.storageState.saveErrors++;
       this.errorCount++;
       this.lastErrorTime = Date.now();
@@ -652,7 +734,7 @@ class MemoryPool {
       if (!addedToSlot) {
         // All slots are full, send to desktop app overflow
         await this.sendToDesktopOverflow(chunk);
-        console.log(`🔄 AMP: Chunk overflowed to desktop app - ${text.length} chars, ID: ${id}`);
+        log(`🔄 AMP: Chunk overflowed to desktop app - ${text.length} chars, ID: ${id}`);
         return chunk;
       }
 
@@ -677,12 +759,12 @@ class MemoryPool {
         });
       }
       
-      console.log(`✅ AMP: Chunk added to slot ${chunk.slot} - ${text.length} chars, ID: ${id}`);
+      log(`✅ AMP: Chunk added to slot ${chunk.slot} - ${text.length} chars, ID: ${id}`);
       
       return chunk;
       
     } catch (error) {
-      console.error('AMP: ❌ Failed to add chunk:', error);
+      logError('AMP: ❌ Failed to add chunk:', error);
       this.errorCount++;
       this.lastErrorTime = Date.now();
       
@@ -1028,7 +1110,7 @@ class MemoryPool {
       
       // Note: hotPool entry stays the same, just slot number updated
       
-      console.log(`🔄 AMP: Cascaded chunk ${oldestChunk.id} from slot ${currentSlot.id} to slot ${nextSlot.id}`);
+      log(`🔄 AMP: Cascaded chunk ${oldestChunk.id} from slot ${currentSlot.id} to slot ${nextSlot.id}`);
       return true;
     }
     
@@ -1075,7 +1157,7 @@ class MemoryPool {
           });
           
           if (response && response.success) {
-            console.log(`📤 AMP: Successfully sent chunk to desktop overflow - ${chunk.id}`);
+            log(`📤 AMP: Successfully sent chunk to desktop overflow - ${chunk.id}`);
             // Remove from queue if successfully sent
             this.overflowQueue = this.overflowQueue.filter(item => item.chunk.id !== chunk.id);
           } else {
@@ -1092,7 +1174,7 @@ class MemoryPool {
       await this.saveToStorage();
       
     } catch (error) {
-      console.error('AMP: Critical error in sendToDesktopOverflow:', error);
+      logError('AMP: Critical error in sendToDesktopOverflow:', error);
       // Even if everything fails, the chunk is still in the queue and will be retried
     }
   }
@@ -1101,7 +1183,7 @@ class MemoryPool {
   async retryOverflowQueue() {
     if (this.overflowQueue.length === 0) return;
     
-    console.log(`🔄 AMP: Retrying ${this.overflowQueue.length} overflow items...`);
+    log(`🔄 AMP: Retrying ${this.overflowQueue.length} overflow items...`);
     
     const itemsToRetry = [...this.overflowQueue];
     let successCount = 0;
@@ -1132,7 +1214,7 @@ class MemoryPool {
           // Remove from queue on success
           this.overflowQueue = this.overflowQueue.filter(qItem => qItem.chunk.id !== item.chunk.id);
           successCount++;
-          console.log(`✅ AMP: Successfully retried overflow item ${item.chunk.id}`);
+          log(`✅ AMP: Successfully retried overflow item ${item.chunk.id}`);
         }
         
       } catch (error) {
@@ -1141,7 +1223,7 @@ class MemoryPool {
     }
     
     if (successCount > 0) {
-      console.log(`✅ AMP: Successfully retried ${successCount} overflow items`);
+      log(`✅ AMP: Successfully retried ${successCount} overflow items`);
       await this.saveToStorage(); // Save updated queue
     }
   }
@@ -1149,17 +1231,17 @@ class MemoryPool {
   // Validate chunk integrity before storage
   validateChunk(chunk) {
     if (!chunk.id || !chunk.conversation_id || !chunk.fullText) {
-      console.error('AMP: Chunk missing required fields');
+      logError('AMP: Chunk missing required fields');
       return false;
     }
     
     if (chunk.fullText.length === 0) {
-      console.error('AMP: Chunk has empty text');
+      logError('AMP: Chunk has empty text');
       return false;
     }
     
     if (chunk.size !== chunk.fullText.length) {
-      console.error('AMP: Chunk size mismatch');
+      logError('AMP: Chunk size mismatch');
       return false;
           }
       
@@ -1167,47 +1249,47 @@ class MemoryPool {
       if (result.amp_fat_zipper) {
         try {
           this.fatZipper = new Map(result.amp_fat_zipper);
-          console.log(`AMP: Loaded fat zipper (${this.fatZipper.size} blocks)`);
+          log(`AMP: Loaded fat zipper (${this.fatZipper.size} blocks)`);
         } catch (fatError) {
-          console.error('AMP: Failed to load fat zipper:', fatError);
+          logError('AMP: Failed to load fat zipper:', fatError);
         }
       }
       
       if (result.amp_thin_zipper) {
         try {
           this.thinZipper = new Map(result.amp_thin_zipper);
-          console.log(`AMP: Loaded thin zipper (${this.thinZipper.size} tags)`);
+          log(`AMP: Loaded thin zipper (${this.thinZipper.size} tags)`);
         } catch (thinError) {
-          console.error('AMP: Failed to load thin zipper:', thinError);
+          logError('AMP: Failed to load thin zipper:', thinError);
         }
       }
       
       if (result.amp_s1s9_progression) {
         try {
           this.s1s9Progression = new Map(result.amp_s1s9_progression);
-          console.log(`AMP: Loaded S1-S9 progression (${this.s1s9Progression.size} conversations)`);
+          log(`AMP: Loaded S1-S9 progression (${this.s1s9Progression.size} conversations)`);
         } catch (progressionError) {
-          console.error('AMP: Failed to load S1-S9 progression:', progressionError);
+          logError('AMP: Failed to load S1-S9 progression:', progressionError);
         }
       }
       
       if (result.amp_current_squares) {
         try {
           this.currentSquares = new Map(result.amp_current_squares);
-          console.log(`AMP: Loaded current squares (${this.currentSquares.size} conversations)`);
+          log(`AMP: Loaded current squares (${this.currentSquares.size} conversations)`);
         } catch (squaresError) {
-          console.error('AMP: Failed to load current squares:', squaresError);
+          logError('AMP: Failed to load current squares:', squaresError);
         }
       }
       
       if (result.amp_block_counter) {
         this.blockCounter = result.amp_block_counter;
-        console.log(`AMP: Loaded block counter: ${this.blockCounter}`);
+        log(`AMP: Loaded block counter: ${this.blockCounter}`);
       }
       
       if (result.amp_chunk_counter) {
         this.chunkCounter = result.amp_chunk_counter;
-        console.log(`AMP: Loaded chunk counter: ${this.chunkCounter}`);
+        log(`AMP: Loaded chunk counter: ${this.chunkCounter}`);
       }
       
       return true;
@@ -1272,7 +1354,7 @@ class MemoryPool {
         removedSize += chunk.size || 0;
       }
       
-      console.log(`Trimmed DOM mirror: removed ${removedSize} bytes`);
+      log(`Trimmed DOM mirror: removed ${removedSize} bytes`);
     }
   }
 
@@ -1347,7 +1429,7 @@ class MemoryPool {
     delete chunk.fullText;
     chunk.size = chunk.conversationSummary.length + JSON.stringify(chunk.contextWindows).length;
     
-    console.log(`Archived conversation ${chunk.conversation_id} to slot 9 - ${chunk.size} chars with context windows`);
+    log(`Archived conversation ${chunk.conversation_id} to slot 9 - ${chunk.size} chars with context windows`);
   }
 
   // Get current session info
@@ -1382,7 +1464,7 @@ class MemoryPool {
       const chunk = domChunks[i];
       chunk.inDom = false;
       chunk.slot = 2; // Move to hot buffer
-      console.log(`Cascaded chunk ${chunk.id} from DOM to hot buffer`);
+      log(`Cascaded chunk ${chunk.id} from DOM to hot buffer`);
     }
     
     // 2. Hot Buffer -> Slot 9 (cascade down for old/large data)
@@ -1404,10 +1486,10 @@ class MemoryPool {
       
       await this.archiveToSlot9(chunk);
       hotSize -= chunk.size;
-      console.log(`Cascaded conversation ${chunk.conversation_id} from hot buffer to slot 9 archive`);
+      log(`Cascaded conversation ${chunk.conversation_id} from hot buffer to slot 9 archive`);
     }
     
-            console.log(`Memory cascade: ${domChunks.length} DOM, ${hotChunks.length} hot, ${this.getArchivedCount()} archived`);
+            log(`Memory cascade: ${domChunks.length} DOM, ${hotChunks.length} hot, ${this.getArchivedCount()} archived`);
   }
 
       // REVERSE FLOW: Inject data back up the memory layers (scroll up, context injection)
@@ -1431,7 +1513,7 @@ class MemoryPool {
         });
       }
       
-      console.log(`Reverse injection: Brought ${reversedData.length} chunks from hot buffer to DOM`);
+      log(`Reverse injection: Brought ${reversedData.length} chunks from hot buffer to DOM`);
     }
     
     else if (targetType === 'context') {
@@ -1450,7 +1532,7 @@ class MemoryPool {
         });
       }
       
-      console.log(`Reverse injection: Retrieved ${reversedData.length} archived conversations for context`);
+      log(`Reverse injection: Retrieved ${reversedData.length} archived conversations for context`);
     }
     
     return reversedData;
@@ -1509,7 +1591,7 @@ class MemoryPool {
       }
       
       recoveryData.dataRestored = recentChunks.length;
-      console.log(`Crash recovery: Restored ${recoveryData.dataRestored} chunks from same conversation`);
+      log(`Crash recovery: Restored ${recoveryData.dataRestored} chunks from same conversation`);
     }
     
     else {
@@ -1543,8 +1625,8 @@ class MemoryPool {
       recoveryData.crossoverInjected = true;
       recoveryData.contextPrepared = contextDump.length;
       
-      console.log(`Crash recovery: Prepared crossover context from ${recoveryData.contextPrepared} archived conversations`);
-      console.log(`Context sources: ${contextDump.map(c => c.source).join(', ')}`);
+      log(`Crash recovery: Prepared crossover context from ${recoveryData.contextPrepared} archived conversations`);
+      log(`Context sources: ${contextDump.map(c => c.source).join(', ')}`);
     }
     
     return recoveryData;
@@ -1653,7 +1735,7 @@ class MemoryPool {
       chunk.summary = chunk.conversationSummary.substring(0, 200) + '...';
       chunk.size = chunk.conversationSummary.length + JSON.stringify(chunk.contextWindows).length;
       
-      console.log(`Archived conversation ${chunk.conversation_id} - ${conversationChunks.length} messages -> ${chunk.size} chars with context windows`);
+      log(`Archived conversation ${chunk.conversation_id} - ${conversationChunks.length} messages -> ${chunk.size} chars with context windows`);
     }
     // Handle embedding based on slot config
     else if (newConfig.embedding && !chunk.embedding) {
@@ -1948,7 +2030,7 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
           }
         }
         
-        console.log(`Archived conversation ${conv.convId}: ${conv.chunks.length} messages, saved ${freedSpace} bytes`);
+        log(`Archived conversation ${conv.convId}: ${conv.chunks.length} messages, saved ${freedSpace} bytes`);
       }
       
       // If still over capacity, remove oldest archived conversations
@@ -1975,7 +2057,7 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
           }
           
           this.conversationIndex.delete(conv.convId);
-          console.log(`Removed archived conversation ${conv.convId}`);
+          log(`Removed archived conversation ${conv.convId}`);
         }
       }
     }
@@ -2753,7 +2835,7 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
       const decryptedMeta = domEncryption.decrypt(encryptedChunk.meta);
       
       if (!decryptedData) {
-        console.error('Failed to decrypt chunk data');
+        logError('Failed to decrypt chunk data');
         return null;
       }
       
@@ -2762,7 +2844,7 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
         ...decryptedData
       };
     } catch (error) {
-      console.error('Chunk decryption failed:', error);
+      logError('Chunk decryption failed:', error);
       return null;
     }
   }
@@ -2770,18 +2852,18 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
   // Robust error recovery system
   async attemptRecovery() {
     if (this.isRecovering) {
-      console.log('AMP: Recovery already in progress, skipping...');
+      log('AMP: Recovery already in progress, skipping...');
       return;
     }
 
     try {
       this.isRecovering = true;
-      console.log('AMP: 🔄 Attempting system recovery...');
+      log('AMP: 🔄 Attempting system recovery...');
       
       // Check error frequency
       const timeSinceLastError = Date.now() - this.lastErrorTime;
       if (this.errorCount > 10 && timeSinceLastError < 60000) {
-        console.error('AMP: Too many errors, entering safe mode');
+        logError('AMP: Too many errors, entering safe mode');
         await this.enterSafeMode();
         return;
       }
@@ -2795,10 +2877,10 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
       // Retry failed operations
       await this.retryFailedOperations();
       
-      console.log('AMP: ✅ Recovery completed successfully');
+      log('AMP: ✅ Recovery completed successfully');
       
     } catch (recoveryError) {
-      console.error('AMP: ❌ Recovery failed:', recoveryError);
+      logError('AMP: ❌ Recovery failed:', recoveryError);
       await this.enterSafeMode();
     } finally {
       this.isRecovering = false;
@@ -2807,7 +2889,7 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
 
   // Enter safe mode when too many errors occur
   async enterSafeMode() {
-    console.log('AMP: 🛡️ Entering safe mode...');
+    log('AMP: 🛡️ Entering safe mode...');
     
     // Clear all data to prevent corruption
     this.hotPool.clear();
@@ -2823,17 +2905,17 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
     // Clear storage to start fresh
     try {
       await chrome.storage.local.clear();
-      console.log('AMP: Storage cleared for fresh start');
+      log('AMP: Storage cleared for fresh start');
     } catch (clearError) {
-      console.error('AMP: Failed to clear storage:', clearError);
+      logError('AMP: Failed to clear storage:', clearError);
     }
     
-    console.log('AMP: Safe mode activated - system reset');
+    log('AMP: Safe mode activated - system reset');
   }
 
   // Clear corrupted data
   async clearCorruptedData() {
-    console.log('AMP: Cleaning corrupted data...');
+    log('AMP: Cleaning corrupted data...');
     
     const corruptedChunks = [];
     
@@ -2851,13 +2933,13 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
     }
     
     if (corruptedChunks.length > 0) {
-      console.log(`AMP: Removed ${corruptedChunks.length} corrupted chunks`);
+      log(`AMP: Removed ${corruptedChunks.length} corrupted chunks`);
     }
   }
 
   // Rebuild indexes from clean data
   async rebuildIndexes() {
-    console.log('AMP: Rebuilding indexes...');
+    log('AMP: Rebuilding indexes...');
     
     // Clear existing indexes
     this.conversationIndex.clear();
@@ -2871,7 +2953,7 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
       }
     }
     
-    console.log(`AMP: Rebuilt indexes - ${this.conversationIndex.size} conversations, ${this.providerIndex.size} providers, ${this.topicIndex.size} topics`);
+    log(`AMP: Rebuilt indexes - ${this.conversationIndex.size} conversations, ${this.providerIndex.size} providers, ${this.topicIndex.size} topics`);
   }
 
   // Retry failed operations from backup queue
@@ -2880,7 +2962,7 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
       return;
     }
     
-    console.log(`AMP: Retrying ${this.backupQueue.length} failed operations...`);
+    log(`AMP: Retrying ${this.backupQueue.length} failed operations...`);
     
     const retryQueue = [...this.backupQueue];
     this.backupQueue = [];
@@ -2889,9 +2971,9 @@ Context: ${provider} conversation about ${topic} covering ${keyPhrases.slice(0, 
       try {
         // Retry the operation (in this case, save to storage)
         await this.saveToStorage();
-        console.log('AMP: Retry operation succeeded');
+        log('AMP: Retry operation succeeded');
       } catch (retryError) {
-        console.error('AMP: Retry operation failed:', retryError);
+        logError('AMP: Retry operation failed:', retryError);
         // Don't add back to queue to prevent infinite loops
       }
     }
@@ -3044,6 +3126,9 @@ class DOMDataDump {
 
   // Initialize dump container in AMP window
   async initializeDump() {
+    // Skip in Service Worker context
+    if (isServiceWorker) return;
+    
     try {
       // Find AMP window or use current page
       let targetDocument = document;
@@ -3061,9 +3146,9 @@ class DOMDataDump {
         targetDocument.body.appendChild(this.dumpContainer);
       }
       
-      console.log('✅ DOM Data Dump initialized');
+      log('✅ DOM Data Dump initialized');
     } catch (error) {
-      console.error('Failed to initialize DOM dump:', error);
+      logError('Failed to initialize DOM dump:', error);
     }
   }
 
@@ -3087,10 +3172,10 @@ class DOMDataDump {
       
       this.dumpContainer.appendChild(dumpElement);
       
-      console.log(`🗑️ DOM Dump: Stored ${dumpId} (${chunkData.length} bytes)`);
+      log(`🗑️ DOM Dump: Stored ${dumpId} (${chunkData.length} bytes)`);
       return dumpId;
     } catch (error) {
-      console.error('Failed to dump chunk:', error);
+      logError('Failed to dump chunk:', error);
     }
   }
 
@@ -3116,7 +3201,7 @@ class DOMDataDump {
         totalMB: (totalSize / (1024 * 1024)).toFixed(2)
       };
     } catch (error) {
-      console.error('Failed to get dump stats:', error);
+      logError('Failed to get dump stats:', error);
       return { totalChunks: 0, totalSize: 0, totalMB: '0.00' };
     }
   }
@@ -3125,7 +3210,7 @@ class DOMDataDump {
   async clearDump() {
     if (this.dumpContainer) {
       this.dumpContainer.innerHTML = '';
-      console.log('🗑️ DOM Data Dump cleared');
+      log('🗑️ DOM Data Dump cleared');
     }
   }
 }
@@ -3134,8 +3219,10 @@ class DOMDataDump {
 const domDataDump = new DOMDataDump();
 
 // Make instances globally available for content scripts
-window.memoryPool = memoryPool;
-window.domDataDump = domDataDump;
+if (!isServiceWorker) {
+  window.memoryPool = memoryPool;
+  window.domDataDump = domDataDump;
+}
 
 // DOM Storage System - Uses AMP window DOM as unlimited storage
 class DOMStorage {
@@ -3151,7 +3238,7 @@ class DOMStorage {
       // Find or create storage container in AMP window
       let ampWindow = await this.getAmpWindow();
       if (!ampWindow) {
-        console.log('AMP window not found, creating storage container in current page');
+        log('AMP window not found, creating storage container in current page');
         ampWindow = document;
       }
 
@@ -3163,9 +3250,9 @@ class DOMStorage {
         ampWindow.body.appendChild(this.storageContainer);
       }
 
-      console.log('✅ DOM Storage initialized in AMP window');
+      log('✅ DOM Storage initialized in AMP window');
     } catch (error) {
-      console.error('Failed to initialize DOM storage:', error);
+      logError('Failed to initialize DOM storage:', error);
     }
   }
 
@@ -3189,7 +3276,7 @@ class DOMStorage {
       }
       return null;
     } catch (error) {
-      console.error('Failed to get AMP window:', error);
+      logError('Failed to get AMP window:', error);
       return null;
     }
   }
@@ -3215,10 +3302,10 @@ class DOMStorage {
       
       this.storageContainer.appendChild(storageElement);
       
-      console.log(`💾 DOM Storage: Stored chunk ${chunkId} (${chunkData.length} bytes)`);
+      log(`💾 DOM Storage: Stored chunk ${chunkId} (${chunkData.length} bytes)`);
       return chunkId;
     } catch (error) {
-      console.error('Failed to store chunk in DOM:', error);
+      logError('Failed to store chunk in DOM:', error);
       throw error;
     }
   }
@@ -3237,7 +3324,7 @@ class DOMStorage {
       }
       return null;
     } catch (error) {
-      console.error('Failed to retrieve chunk from DOM:', error);
+      logError('Failed to retrieve chunk from DOM:', error);
       return null;
     }
   }
@@ -3276,7 +3363,7 @@ class DOMStorage {
 
       return results;
     } catch (error) {
-      console.error('Failed to search chunks in DOM:', error);
+      logError('Failed to search chunks in DOM:', error);
       return [];
     }
   }
@@ -3310,7 +3397,7 @@ class DOMStorage {
         storageType: 'DOM'
       };
     } catch (error) {
-      console.error('Failed to get DOM storage stats:', error);
+      logError('Failed to get DOM storage stats:', error);
       return { totalChunks: 0, totalSize: 0, providers: [], topics: [], storageType: 'DOM' };
     }
   }
@@ -3319,7 +3406,7 @@ class DOMStorage {
   async clearStorage() {
     if (this.storageContainer) {
       this.storageContainer.innerHTML = '';
-      console.log('🗑️ DOM Storage cleared');
+      log('🗑️ DOM Storage cleared');
     }
   }
 
@@ -3342,10 +3429,10 @@ class DOMStorage {
         }
       }
 
-      console.log(`🧹 DOM Storage: Cleaned up ${removedCount} old chunks`);
+      log(`🧹 DOM Storage: Cleaned up ${removedCount} old chunks`);
       return removedCount;
     } catch (error) {
-      console.error('Failed to cleanup old chunks:', error);
+      logError('Failed to cleanup old chunks:', error);
       return 0;
     }
   }
@@ -3366,6 +3453,15 @@ class SmartSecurity {
   }
   
   detectDeploymentMode() {
+    // In Service Worker, assume local browser mode
+    if (isServiceWorker) {
+      return {
+        enterprise: false,
+        serverSide: false,
+        localBrowser: true
+      };
+    }
+    
     // Detect if we're in enterprise/server mode vs local browser
     const isEnterpriseMode = !!(
       window.location.protocol === 'https:' && 
@@ -3393,12 +3489,14 @@ class SmartSecurity {
   }
   
   async checkAMPServerAvailable() {
+    // Check via chrome.runtime message to background script
+    // Background script handles native messaging connection
     try {
-      const response = await fetch('http://127.0.0.1:3000/status', {
-        method: 'GET',
-        signal: AbortSignal.timeout(1000)
-      });
-      return response.ok;
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        const response = await chrome.runtime.sendMessage({ action: 'pingDesktopApp' });
+        return response && response.success;
+      }
+      return false;
     } catch {
       return false;
     }
@@ -3431,8 +3529,10 @@ async function embed(text) {
 }
 
 // Make functions globally available for content scripts
-window.summarize = summarize;
-window.embed = embed;
+if (!isServiceWorker) {
+  window.summarize = summarize;
+  window.embed = embed;
+}
 
 // 9-Square Grid System
 class NineSquareGrid {
@@ -3476,7 +3576,7 @@ class NineSquareGrid {
     // Update context pool
     this.updateContextPool();
     
-    console.log(`Squares 1 & 9 updated to version ${this.versionCounter}`);
+    log(`Squares 1 & 9 updated to version ${this.versionCounter}`);
     return this.versionCounter;
   }
 
@@ -3572,7 +3672,7 @@ class NineSquareGrid {
       }
     }
     
-    console.log(`Context pool updated: ${this.contextPool.length} squares`);
+    log(`Context pool updated: ${this.contextPool.length} squares`);
   }
 
   // Get current context pool (ready for pickup)
@@ -3608,7 +3708,7 @@ class NineSquareGrid {
     this.grid.sq9 = { indexedData: {}, timestamp: 0, version: 0 };
     
     this.updateContextPool();
-    console.log('Moved to next position, squares shifted');
+    log('Moved to next position, squares shifted');
   }
 
   // Get grid status

@@ -1,10 +1,16 @@
 // © 2025 AMPIQ All rights reserved.
 // Content script for AMP extension
+// Version: 4.0.0 - Production
 
-console.log('AMP: Content script loaded');
+// Production logging - set to false to disable all debug logs
+const AMP_DEBUG = false;
+const log = (...args) => AMP_DEBUG && console.log('[AMP Content]', ...args);
+const logError = (...args) => console.error('[AMP Content]', ...args);
+
+log('Content script loaded');
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('AMP Content: Received message:', message);
+  log('AMP Content: Received message:', message);
   
   switch (message.action) {
     case 'setMonitoringStatus':
@@ -24,6 +30,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       break;
       
+    case 'showInjectionApproval':
+      // Show injection approval popup in the page
+      showInjectionApprovalPopup(message.context, message.provider, sendResponse);
+      return true; // Keep channel open for async response
+      
+    case 'injectContext':
+      // Handle context injection
+      handleContextInjection(message.context, message.amount);
+      sendResponse({ success: true });
+      break;
+      
     default:
       // Handle other messages
       break;
@@ -31,6 +48,68 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   return true;
 });
+
+// Show injection approval popup in the page
+function showInjectionApprovalPopup(context, provider, sendResponse) {
+  // Remove existing popup if any
+  const existingPopup = document.getElementById('amp-injection-popup');
+  if (existingPopup) {
+    existingPopup.remove();
+  }
+  
+  const popup = document.createElement('div');
+  popup.id = 'amp-injection-popup';
+  popup.style.cssText = `
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    border: 2px solid #3498db;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 450px;
+    max-height: 350px;
+    overflow-y: auto;
+    z-index: 2147483647;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #fff;
+  `;
+  
+  popup.innerHTML = `
+    <h3 style="margin: 0 0 15px 0; color: #3498db; font-size: 18px;">🔄 AMP Context Injection</h3>
+    <p style="margin: 0 0 12px 0; font-size: 14px; color: #bdc3c7;">
+      <strong style="color: #fff;">${provider}</strong> appears to have lost context. 
+      Inject previous conversation context?
+    </p>
+    <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 12px; max-height: 120px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.1);">
+      <strong style="color: #3498db;">Preview:</strong><br>
+      <span style="color: #bdc3c7;">${context.substring(0, 250)}${context.length > 250 ? '...' : ''}</span>
+    </div>
+    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
+      <button id="amp-inject-deny" style="padding: 10px 20px; border: 1px solid #bdc3c7; background: transparent; color: #bdc3c7; border-radius: 6px; cursor: pointer; font-size: 14px; transition: all 0.2s;">Cancel</button>
+      <button id="amp-inject-approve" style="padding: 10px 20px; border: none; background: linear-gradient(135deg, #3498db, #2980b9); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s;">Inject Context</button>
+    </div>
+  `;
+  
+  document.body.appendChild(popup);
+  
+  let responded = false;
+  
+  const cleanup = (approved) => {
+    if (responded) return;
+    responded = true;
+    popup.remove();
+    sendResponse({ approved });
+  };
+  
+  popup.querySelector('#amp-inject-approve').onclick = () => cleanup(true);
+  popup.querySelector('#amp-inject-deny').onclick = () => cleanup(false);
+  
+  // Auto-close after 20 seconds
+  setTimeout(() => cleanup(false), 20000);
+}
 
 function addDebugIndicator() {
   try {
@@ -69,7 +148,7 @@ function addDebugIndicator() {
     }, 5000);
     
   } catch (error) {
-    console.log('AMP: Could not add debug indicator:', error);
+    log('AMP: Could not add debug indicator:', error);
   }
 }
 
@@ -80,7 +159,7 @@ function setMonitoringStatus(isActive, tabId) {
   // Update or create monitoring indicator
   updateMonitoringIndicator();
   
-  console.log(`AMP Content: Monitoring status set to ${isActive} for tab ${tabId}`);
+  log(`AMP Content: Monitoring status set to ${isActive} for tab ${tabId}`);
   
   // Start or stop monitoring based on status
   if (isActive) {
@@ -129,19 +208,19 @@ function updateMonitoringIndicator() {
       }, 3000);
     }
   } catch (error) {
-    console.log('AMP: Could not update monitoring indicator:', error);
+    log('AMP: Could not update monitoring indicator:', error);
   }
 }
 
 // Start monitoring for this tab
 function startMonitoring() {
-  console.log('AMP Content: Starting monitoring for this tab');
+  log('AMP Content: Starting monitoring for this tab');
   // The existing monitoring functions will now work since isActiveMonitoringTab is true
 }
 
 // Stop monitoring for this tab
 function stopMonitoring() {
-  console.log('AMP Content: Stopping monitoring for this tab');
+  log('AMP Content: Stopping monitoring for this tab');
   // Clear any ongoing monitoring processes
 }
 
@@ -193,7 +272,7 @@ function showMonitoringHint(provider, hostname) {
         });
         hint.remove();
       } catch (error) {
-        console.error('Failed to request monitoring switch:', error);
+        logError('Failed to request monitoring switch:', error);
       }
     });
     
@@ -223,9 +302,9 @@ function showMonitoringHint(provider, hostname) {
       }
     }, 8000);
     
-    console.log(`💡 AMP Content: Showing monitoring hint for ${provider}`);
+    log(`💡 AMP Content: Showing monitoring hint for ${provider}`);
   } catch (error) {
-    console.error('AMP Content: Failed to show monitoring hint:', error);
+    logError('AMP Content: Failed to show monitoring hint:', error);
   }
 }
 
@@ -340,7 +419,7 @@ async function initializeSession() {
     const aiProviders = ['ChatGPT', 'Claude', 'Gemini', 'Poe', 'Perplexity', 'Pi', 'Blackbox', 'YouChat', 'Phind', 'BingChat', 'Forefront', 'LMSYS', 'Reka', 'Ora', 'AIChat', 'Socratic', 'Tome', 'Anthropic', 'Kagi', 'Zephyr', 'Alpaca', 'Cursor'];
     if (aiProviders.includes(currentProvider)) {
       isActiveMonitoringTab = true;
-      console.log(`🟢 AMP: Auto-enabled monitoring for ${currentProvider}`);
+      log(`🟢 AMP: Auto-enabled monitoring for ${currentProvider}`);
     }
   }
   
@@ -350,7 +429,7 @@ async function initializeSession() {
   // Initialize scroll listener for reverse injection
   initializeScrollListener();
   
-  console.log(`AMP: ${currentProvider} - ${currentConversationId}`);
+  log(`AMP: ${currentProvider} - ${currentConversationId}`);
   observeDOM();
 }
 
@@ -370,7 +449,7 @@ function initializeScrollListener() {
       
       // Detect reverse scroll (scrolling up significantly)
       if (currentScrollY < lastScrollY - 200) {
-        console.log('🔄 AMP: Reverse scroll detected, triggering reverse injection');
+        log('🔄 AMP: Reverse scroll detected, triggering reverse injection');
         chrome.runtime.sendMessage({ 
           action: 'triggerReverseInjection',
           triggerType: 'scroll',
@@ -384,7 +463,7 @@ function initializeScrollListener() {
     }, 100); // Debounce for 100ms
   }, { passive: true });
   
-  console.log('🔄 AMP: Scroll listener initialized for reverse injection');
+  log('🔄 AMP: Scroll listener initialized for reverse injection');
 }
 
 // Check if this tab is currently being monitored
@@ -397,14 +476,14 @@ async function checkMonitoringStatus() {
       
       if (response && response.isActive) {
         setMonitoringStatus(true, currentTabId);
-        console.log('AMP Content: This tab is actively being monitored');
+        log('AMP Content: This tab is actively being monitored');
       } else {
         setMonitoringStatus(false, currentTabId);
-        console.log('AMP Content: This tab is not being monitored');
+        log('AMP Content: This tab is not being monitored');
       }
     }
   } catch (error) {
-    console.error('AMP Content: Failed to check monitoring status:', error);
+    logError('AMP Content: Failed to check monitoring status:', error);
     // Default to not monitoring if we can't check
     setMonitoringStatus(false, currentTabId);
   }
@@ -474,12 +553,12 @@ async function requestContextInjection() {
       lastInjectionTime = Date.now();
     }
   } catch (error) {
-    console.error('AMP: Error requesting context injection:', error);
+    logError('AMP: Error requesting context injection:', error);
   }
 }
 
 function handleContextInjection(context, amount) {
-  console.log(`🔄 AMP: Injecting context (${amount} chars)...`);
+  log(`🔄 AMP: Injecting context (${amount} chars)...`);
   
   // Find the main input area with provider-specific selectors
   const provider = getAIProvider();
@@ -537,38 +616,67 @@ function handleContextInjection(context, amount) {
     // Trigger input event
     inputElement.dispatchEvent(new Event('input', { bubbles: true }));
     
-    console.log('AMP: Context injected successfully');
+    log('AMP: Context injected successfully');
   } else {
-    console.error('AMP: Could not find input element for context injection');
+    logError('AMP: Could not find input element for context injection');
   }
 }
 
-// Observe DOM changes
+// PERFORMANCE: Debounced DOM observation to reduce CPU usage
+let domObserverTimeout = null;
+let pendingMutations = 0;
+const DOM_OBSERVER_DEBOUNCE = 500; // Wait 500ms after last mutation before processing
+const MAX_PENDING_MUTATIONS = 100; // Force process after this many mutations
+
+// Observe DOM changes with debouncing for performance
 function observeDOM() {
-  const observer = new MutationObserver(async (mutations) => {
+  const observer = new MutationObserver((mutations) => {
     let foundNewMessages = false;
     
-    mutations.forEach(mutation => {
+    // Quick check without heavy processing
+    for (const mutation of mutations) {
       if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        mutation.addedNodes.forEach(node => {
+        for (const node of mutation.addedNodes) {
           if (node.nodeType === Node.ELEMENT_NODE) {
-            const text = node.textContent?.trim();
+            // Only check immediate text, not deep traversal
+            const text = node.textContent;
             if (text && text.length > 20) {
               foundNewMessages = true;
+              break;
             }
           }
-        });
+        }
+        if (foundNewMessages) break;
       }
-    });
+    }
     
     if (foundNewMessages) {
-      await processNewContent();
+      pendingMutations++;
+      
+      // Debounce: wait for mutations to settle
+      if (domObserverTimeout) {
+        clearTimeout(domObserverTimeout);
+      }
+      
+      // Force process if too many pending mutations
+      if (pendingMutations >= MAX_PENDING_MUTATIONS) {
+        pendingMutations = 0;
+        processNewContent();
+      } else {
+        domObserverTimeout = setTimeout(() => {
+          pendingMutations = 0;
+          processNewContent();
+        }, DOM_OBSERVER_DEBOUNCE);
+      }
     }
   });
   
+  // Optimized observer options - less aggressive
   observer.observe(document.body, { 
     childList: true, 
-    subtree: true 
+    subtree: true,
+    characterData: false, // Don't track text changes
+    attributes: false     // Don't track attribute changes
   });
 }
 
@@ -579,7 +687,7 @@ async function processNewContent() {
     const aiProviders = ['ChatGPT', 'Claude', 'Gemini', 'Poe', 'Perplexity', 'Pi', 'Blackbox', 'YouChat', 'Phind', 'BingChat', 'Forefront', 'LMSYS', 'Reka', 'Ora', 'AIChat', 'Socratic', 'Tome', 'Anthropic', 'Kagi', 'Zephyr', 'Alpaca', 'Cursor'];
     if (aiProviders.includes(currentProvider)) {
       isActiveMonitoringTab = true;
-      console.log(`🟢 AMP: Auto-enabled monitoring during content processing`);
+      log(`🟢 AMP: Auto-enabled monitoring during content processing`);
     }
   }
   
@@ -746,38 +854,7 @@ function generateHash(text) {
   return hash.toString(16);
 }
 
-// Extract conversation content
-function extractConversationTurns() {
-  const chunks = [];
-  const messageSelectors = [
-    '[data-message-author-role]',
-    '.message',
-    '.chat-message',
-    'p'
-  ];
-  
-  for (const selector of messageSelectors) {
-    const messages = document.querySelectorAll(selector);
-    
-    messages.forEach(msg => {
-      if (msg.hasAttribute('data-amp-processed')) return;
-      
-      const text = msg.textContent?.trim();
-      if (!text || text.length < 15) return;
-      
-      chunks.push({ 
-        text, 
-        type: 'content' 
-      });
-      
-      msg.setAttribute('data-amp-processed', 'true');
-    });
-    
-    if (chunks.length > 0) break;
-  }
-  
-  return chunks;
-}
+// REMOVED: Simple extractConversationTurns - using comprehensive version below
 
 // Initialize when ready
 if (document.readyState === 'loading') {
@@ -881,24 +958,9 @@ function showContextCarryoverPrompt(provider, hostname) {
 
 function extractConversationTurns() {
   const chunks = [];
-  console.log('AMP: Extracting conversation data');
-  
-  // AGGRESSIVE DEBUGGING - Show ALL text content on the page
-      const allTextElements = document.querySelectorAll('p, div, span, textarea, input, h1, h2, h3, h4, h5, h6, article, main, section');
-    console.log(`AMP: Found ${allTextElements.length} potential text elements`);
-  
-  // Show first 10 elements with their text
-  for (let i = 0; i < Math.min(10, allTextElements.length); i++) {
-    const element = allTextElements[i];
-    const text = element.textContent?.trim();
-    if (text && text.length > 10) {
-      console.log(`AMP: Element ${i}: ${element.tagName}.${element.className} = "${text.substring(0, 100)}..."`);
-    }
-  }
   
   // Get the current provider to determine which selectors to use
   const currentProvider = getAIProvider();
-      console.log('AMP: Current provider detected:', currentProvider);
   
   // Use provider-specific selectors OR generic content detection
   let messageSelectors = [];
@@ -980,7 +1042,7 @@ function extractConversationTurns() {
       '.prompter-content',
       '.text-content'
     ];
-          console.log('AMP: Using CuePrompter-specific selectors');
+          log('AMP: Using CuePrompter-specific selectors');
   } else if (currentProvider === 'MyCustomSite') {
     messageSelectors = [
       // Add your custom selectors here
@@ -989,7 +1051,7 @@ function extractConversationTurns() {
       'textarea',
       '.input-area'
     ];
-          console.log('AMP: Using MyCustomSite-specific selectors');
+          log('AMP: Using MyCustomSite-specific selectors');
   } else if (currentProvider === 'AnotherSite') {
     messageSelectors = [
       // Add your custom selectors here
@@ -998,7 +1060,7 @@ function extractConversationTurns() {
       'textarea',
       '.input-field'
     ];
-    console.log('🔍 AMP: Using AnotherSite-specific selectors');
+    log('🔍 AMP: Using AnotherSite-specific selectors');
   } else {
     // Generic content detection for ANY website
     messageSelectors = [
@@ -1024,18 +1086,18 @@ function extractConversationTurns() {
       '.input',
       '.text-input'
     ];
-    console.log('🔍 AMP: Using generic content detection for:', currentProvider);
+    log('🔍 AMP: Using generic content detection for:', currentProvider);
   }
   
   for (const selector of messageSelectors) {
     const messages = document.querySelectorAll(selector);
-    console.log(`🔍 AMP: Found ${messages.length} elements with selector: ${selector}`);
+    log(`🔍 AMP: Found ${messages.length} elements with selector: ${selector}`);
     
     messages.forEach(msg => {
       if (msg.hasAttribute('data-amp-processed')) return;
       
       const text = msg.textContent?.trim();
-      console.log(`🔍 AMP: Checking element with selector ${selector}:`, {
+      log(`🔍 AMP: Checking element with selector ${selector}:`, {
         text: text ? text.substring(0, 100) + '...' : 'EMPTY',
         length: text ? text.length : 0,
         tagName: msg.tagName,
@@ -1044,19 +1106,19 @@ function extractConversationTurns() {
       });
       
       if (!text || text.length < 20) {
-        console.log(`🔍 AMP: Skipping element - text too short or empty (${text ? text.length : 0} chars)`);
+        log(`🔍 AMP: Skipping element - text too short or empty (${text ? text.length : 0} chars)`);
         return;
       }
       
       // Skip navigation, headers, footers, and other non-content elements
       if (msg.closest('nav, header, footer, aside, .nav, .header, .footer, .sidebar')) {
-        console.log(`🔍 AMP: Skipping element - in navigation/footer area`);
+        log(`🔍 AMP: Skipping element - in navigation/footer area`);
         return;
       }
       
       // Skip very short or likely non-content text
       if (text.length < 20 || text.match(/^(©|Privacy|Terms|Cookie|Menu|Home|About|Contact)$/i)) {
-        console.log(`🔍 AMP: Skipping element - likely non-content text: "${text}"`);
+        log(`🔍 AMP: Skipping element - likely non-content text: "${text}"`);
         return;
       }
       
@@ -1085,7 +1147,7 @@ function extractConversationTurns() {
       
       chunks.push({ text, type });
       msg.setAttribute('data-amp-processed', 'true');
-      console.log(`✅ AMP: Extracted ${type} content: ${text.substring(0, 50)}...`);
+      log(`✅ AMP: Extracted ${type} content: ${text.substring(0, 50)}...`);
     });
     
     // Don't break - collect from ALL selectors for maximum data
@@ -1093,7 +1155,7 @@ function extractConversationTurns() {
   
   // FALLBACK: If no chunks found, capture ANY meaningful text content
   if (chunks.length === 0) {
-    console.log('🔍 AMP: No chunks found with selectors, using FALLBACK extraction...');
+    log('🔍 AMP: No chunks found with selectors, using FALLBACK extraction...');
     
     const fallbackElements = document.querySelectorAll('p, div, span, textarea, article, main, section');
     let fallbackCount = 0;
@@ -1111,16 +1173,16 @@ function extractConversationTurns() {
         });
         element.setAttribute('data-amp-processed', 'true');
         fallbackCount++;
-        console.log(`🔍 AMP: FALLBACK extracted: ${text.substring(0, 100)}...`);
+        log(`🔍 AMP: FALLBACK extracted: ${text.substring(0, 100)}...`);
         
         if (fallbackCount >= 5) return; // Limit fallback chunks
       }
     });
     
-    console.log(`🔍 AMP: FALLBACK extracted ${fallbackCount} additional chunks`);
+    log(`🔍 AMP: FALLBACK extracted ${fallbackCount} additional chunks`);
   }
   
-  console.log(`📊 AMP: Total extracted ${chunks.length} conversation chunks`);
+  log(`📊 AMP: Total extracted ${chunks.length} conversation chunks`);
   return chunks;
 }
 
@@ -1160,20 +1222,20 @@ function createMemoryNode(memoryChunk, messageType) {
 
 // Manual trigger function for debugging
 window.ampManualExtract = function() {
-  console.log('🔧 AMP: Manual extraction triggered');
+  log('🔧 AMP: Manual extraction triggered');
   const chunks = extractConversationTurns();
-  console.log('🔧 AMP: Manual extraction result:', chunks);
+  log('🔧 AMP: Manual extraction result:', chunks);
   
   if (chunks.length > 0) {
     chunks.forEach((chunk, index) => {
-      console.log(`🔧 AMP: Chunk ${index + 1}:`, {
+      log(`🔧 AMP: Chunk ${index + 1}:`, {
         type: chunk.type,
         text: chunk.text.substring(0, 200) + '...',
         length: chunk.text.length
       });
     });
   } else {
-    console.log('🔧 AMP: No chunks extracted - page may not have content');
+    log('🔧 AMP: No chunks extracted - page may not have content');
   }
   
   return chunks;
@@ -1185,7 +1247,7 @@ window.ampManualExtract = function() {
 
 // Optimized DOM monitoring for dual zipper system
 function startOptimizedMonitoring() {
-  console.log('🚀 AMP: Starting optimized dual zipper monitoring...');
+  log('🚀 AMP: Starting optimized dual zipper monitoring...');
   
   let scanTimeout = null;
   
@@ -1195,11 +1257,11 @@ function startOptimizedMonitoring() {
     scanTimeout = setTimeout(() => {
       try {
         if (chrome && chrome.runtime && chrome.runtime.id) {
-          console.log('📝 AMP: Change detected - scanning for S1 capture...');
+          log('📝 AMP: Change detected - scanning for S1 capture...');
           scanForS1Capture();
         }
       } catch (error) {
-        console.log('AMP: Error during debounced scan:', error.message);
+        log('AMP: Error during debounced scan:', error.message);
       }
     }, 1000); // Debounce for 1 second
   }
@@ -1243,7 +1305,7 @@ function startOptimizedMonitoring() {
         scanForS1Capture();
       }
     } catch (error) {
-      console.log('AMP: Error in initial scan:', error.message);
+      log('AMP: Error in initial scan:', error.message);
     }
   }, 2000);
 }
@@ -1252,11 +1314,11 @@ function startOptimizedMonitoring() {
 function scanForS1Capture() {
   try {
     if (!chrome || !chrome.runtime || !chrome.runtime.id) {
-      console.log('AMP: Extension context invalid, skipping scan');
+      log('AMP: Extension context invalid, skipping scan');
       return;
     }
     
-    console.log('🔍 AMP: Scanning for S1 capture...');
+    log('🔍 AMP: Scanning for S1 capture...');
     
     // Use targeted selectors for conversation content
     const conversationSelectors = [
@@ -1294,10 +1356,10 @@ function scanForS1Capture() {
     });
     
     if (capturedCount > 0) {
-      console.log(`✅ AMP: Captured ${capturedCount} S1 content pieces`);
+      log(`✅ AMP: Captured ${capturedCount} S1 content pieces`);
     }
   } catch (error) {
-    console.error('AMP: Error in S1 scan:', error);
+    logError('AMP: Error in S1 scan:', error);
   }
 }
 
@@ -1319,7 +1381,7 @@ function processElementForS1(element) {
   if (isConversation) {
     const messageType = determineMessageType(text, element);
     
-    console.log(`📝 AMP: Capturing S1 ${messageType}: ${text.substring(0, 40)}...`);
+    log(`📝 AMP: Capturing S1 ${messageType}: ${text.substring(0, 40)}...`);
     
     // Send to background script for S1-S9 processing
     if (chrome && chrome.runtime && chrome.runtime.id) {
@@ -1336,7 +1398,7 @@ function processElementForS1(element) {
           messageType: messageType
         });
       } catch (error) {
-        console.log('AMP: Error sending S1 to background:', error.message);
+        log('AMP: Error sending S1 to background:', error.message);
       }
     }
     
@@ -1352,61 +1414,28 @@ function processElementForS1(element) {
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
-    console.log('🚀 AMP: DOMContentLoaded - Initializing content script...');
-    console.log('🔍 AMP: Current URL:', window.location.href);
-    console.log('🔍 AMP: Document title:', document.title);
-    console.log('🔍 AMP: Document ready state:', document.readyState);
     initializeSession();
     startOptimizedMonitoring();
-    
-    // PRODUCTION CONTENT MONITORING - Real-time extraction
     setTimeout(() => {
-      console.log('🚀 AMP: Starting PRODUCTION content monitoring...');
       startProductionMonitoring();
     }, 1000);
   });
 } else {
-  console.log('🚀 AMP: DOM already ready - Initializing content script...');
-  console.log('🔍 AMP: Current URL:', window.location.href);
-  console.log('🔍 AMP: Document title:', document.title);
-  console.log('🔍 AMP: Document ready state:', document.readyState);
   initializeSession();
   startOptimizedMonitoring();
   
-        // Start real content monitoring
+  // Start content monitoring
   setTimeout(() => {
     startProductionMonitoring();
-    // Force initial extraction
     setTimeout(() => {
-      console.log('AMP: Force initial extraction');
       processProductionContent();
-      
-      // Test with a simple message to verify the system works
-      setTimeout(() => {
-        console.log('AMP: Sending test message to verify system');
-        chrome.runtime.sendMessage({
-          action: 'storeMemory',
-          content: 'This is a test message to verify the AMP system is working. If you see this in the stats, the system is functioning correctly.',
-          summary: 'Test message for system verification',
-          provider: currentProvider,
-          tabId: currentTabId,
-          topic: 'System Test',
-          conversationId: currentConversationId,
-          messageId: 'test-' + Date.now(),
-          messageType: 'test'
-        }).then(response => {
-          console.log('AMP: Test message response:', response);
-        }).catch(error => {
-          console.error('AMP: Test message failed:', error);
-        });
-      }, 3000);
     }, 2000);
   }, 1000);
 }
 
 // PRODUCTION CONTENT EXTRACTION - Real-time DOM monitoring
 function startProductionMonitoring() {
-  console.log('AMP: Starting production content monitoring');
+  log('AMP: Starting production content monitoring');
   
   // Real-time DOM monitoring with MutationObserver
   const observer = new MutationObserver(async (mutations) => {
@@ -1418,7 +1447,7 @@ function startProductionMonitoring() {
           if (node.nodeType === Node.ELEMENT_NODE) {
             const text = node.textContent?.trim();
             if (text && text.length > 20) {
-              console.log('AMP: New content detected:', text.substring(0, 100) + '...');
+              log('AMP: New content detected:', text.substring(0, 100) + '...');
               hasNewContent = true;
             }
           }
@@ -1464,14 +1493,14 @@ function startProductionMonitoring() {
   // Also monitor body for any content changes
   observer.observe(document.body, { childList: true, subtree: true });
   
-  console.log('AMP: Production monitoring active');
+  log('AMP: Production monitoring active');
 }
 
 // PRODUCTION content processing
 async function processProductionContent() {
-  console.log('AMP: Processing production content...');
+  log('AMP: Processing production content...');
   const chunks = extractProductionContent();
-  console.log('AMP: Extracted chunks:', chunks.length);
+  log('AMP: Extracted chunks:', chunks.length);
   
   for (const chunk of chunks) {
     if (chunk.text.trim().length < 20) continue;
@@ -1500,7 +1529,7 @@ async function processProductionContent() {
     // Send to background script for storage
     if (chrome && chrome.runtime) {
       try {
-        console.log('AMP: Sending chunk to background:', chunk.text.substring(0, 100) + '...');
+        log('AMP: Sending chunk to background:', chunk.text.substring(0, 100) + '...');
         const response = await chrome.runtime.sendMessage({
           action: 'storeMemory',
           content: chunk.text,
@@ -1513,12 +1542,12 @@ async function processProductionContent() {
           messageType: chunk.type,
         });
         
-        console.log(`AMP: Stored ${chunk.type} message (${chunk.text.length} chars) - Response:`, response);
+        log(`AMP: Stored ${chunk.type} message (${chunk.text.length} chars) - Response:`, response);
       } catch (error) {
-        console.error('AMP: Failed to store production content:', error);
+        logError('AMP: Failed to store production content:', error);
       }
     } else {
-      console.error('AMP: Chrome runtime not available');
+      logError('AMP: Chrome runtime not available');
     }
   }
 }
@@ -1530,7 +1559,7 @@ function extractProductionContent() {
   
   // Get ALL elements with text content
   const allElements = document.querySelectorAll('*');
-  console.log(`AMP: Scanning ${allElements.length} total elements for content`);
+  log(`AMP: Scanning ${allElements.length} total elements for content`);
   
   allElements.forEach(element => {
     // Skip already processed elements
@@ -1592,11 +1621,11 @@ function extractProductionContent() {
       processedElements.add(element);
       element.querySelectorAll('*').forEach(child => processedElements.add(child));
       
-      console.log(`AMP: Extracted ${type} content (${text.length} chars): ${text.substring(0, 100)}...`);
+      log(`AMP: Extracted ${type} content (${text.length} chars): ${text.substring(0, 100)}...`);
     }
   });
   
-  console.log(`AMP: Total extracted ${chunks.length} content chunks`);
+  log(`AMP: Total extracted ${chunks.length} content chunks`);
   return chunks;
 }
 

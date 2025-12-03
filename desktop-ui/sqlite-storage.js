@@ -1,5 +1,11 @@
 // © 2025 AMPiQ - SQLite Storage Manager for AMP Desktop
 // Provides indexed storage for conversation memory data
+// Version: 4.0.0 - Production
+
+// Production logging - set to false to disable debug logs
+const AMP_DEBUG = false;
+const log = (...args) => AMP_DEBUG && console.log('[AMP SQLite]', ...args);
+const logError = (...args) => console.error('[AMP SQLite]', ...args);
 
 const path = require('path');
 const fs = require('fs');
@@ -77,7 +83,7 @@ class AMPSQLiteStorage {
       
       return true;
     } catch (error) {
-      console.error('Failed to initialize SQLite storage:', error);
+      logError('Failed to initialize SQLite storage:', error);
       return false;
     }
   }
@@ -225,7 +231,7 @@ class AMPSQLiteStorage {
       transaction();
       return { success: true, chunkId: chunk.id };
     } catch (error) {
-      console.error('Failed to store memory chunk:', error);
+      logError('Failed to store memory chunk:', error);
       return { success: false, error: error.message };
     }
   }
@@ -293,7 +299,7 @@ class AMPSQLiteStorage {
       transaction();
       return { success: true, id };
     } catch (error) {
-      console.error('Failed to store data:', error);
+      logError('Failed to store data:', error);
       return { success: false, error: error.message };
     }
   }
@@ -317,7 +323,7 @@ class AMPSQLiteStorage {
         return this.getConversations(query.filters || {}, query.limit || 50, query.offset || 0);
       }
     } catch (error) {
-      console.error('Failed to get data:', error);
+      logError('Failed to get data:', error);
       throw error;
     }
   }
@@ -350,7 +356,7 @@ class AMPSQLiteStorage {
     try {
       return this.db.prepare(query).all(...params);
     } catch (error) {
-      console.error('Failed to get conversations:', error);
+      logError('Failed to get conversations:', error);
       return [];
     }
   }
@@ -367,7 +373,7 @@ class AMPSQLiteStorage {
         LIMIT ?
       `).all(conversationId, limit);
     } catch (error) {
-      console.error('Failed to get conversation chunks:', error);
+      logError('Failed to get conversation chunks:', error);
       return [];
     }
   }
@@ -401,7 +407,28 @@ class AMPSQLiteStorage {
     try {
       return this.db.prepare(searchQuery).all(...params);
     } catch (error) {
-      console.error('Failed to search memory:', error);
+      logError('Failed to search memory:', error);
+      return [];
+    }
+  }
+
+  // Get all memory chunks (for export/display)
+  getAllMemoryChunks(limit = 1000) {
+    if (!this.isInitialized) return [];
+
+    try {
+      return this.db.prepare(`
+        SELECT 
+          mc.*,
+          c.topic as conv_topic,
+          c.message_count
+        FROM memory_chunks mc
+        LEFT JOIN conversations c ON mc.conversation_id = c.id
+        ORDER BY mc.timestamp DESC
+        LIMIT ?
+      `).all(limit);
+    } catch (error) {
+      logError('Failed to get all memory chunks:', error);
       return [];
     }
   }
@@ -426,7 +453,7 @@ class AMPSQLiteStorage {
         LIMIT ?
       `).all(limit);
     } catch (error) {
-      console.error('Failed to get recent activity:', error);
+      logError('Failed to get recent activity:', error);
       return [];
     }
   }
@@ -468,7 +495,7 @@ class AMPSQLiteStorage {
         providers: providers
       };
     } catch (error) {
-      console.error('Failed to get storage stats:', error);
+      logError('Failed to get storage stats:', error);
       return {
         totalConversations: 0,
         totalChunks: 0,
@@ -499,7 +526,7 @@ class AMPSQLiteStorage {
         exportedAt: new Date().toISOString()
       };
     } catch (error) {
-      console.error('Failed to export conversation:', error);
+      logError('Failed to export conversation:', error);
       return null;
     }
   }
@@ -518,7 +545,7 @@ class AMPSQLiteStorage {
 
       return { deleted: result.changes };
     } catch (error) {
-      console.error('Failed to clear old data:', error);
+      logError('Failed to clear old data:', error);
       return { deleted: 0 };
     }
   }

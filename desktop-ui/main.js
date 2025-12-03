@@ -1,5 +1,11 @@
 // © 2025 AMPIQ All rights reserved.
 // Main Electron process for AMPiQ Desktop (Native Messaging)
+// Version: 4.0.0 - Production
+
+// Production logging - set to false to disable debug logs
+const AMP_DEBUG = false;
+const log = (...args) => AMP_DEBUG && log('[AMP Main]', ...args);
+const logError = (...args) => logError('[AMP Main]', ...args);
 
 const path = require('path');
 const fs = require('fs');
@@ -210,330 +216,9 @@ class InMemoryStorage {
 const messageQueue = new MessageQueue();
 const inMemoryStorage = new InMemoryStorage();
 
-// Native messaging is handled by amp-native-host.js
-
-  async handleRequest(req, res) {
-    // Enable CORS for extension
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-    if (req.method === 'OPTIONS') {
-      res.writeHead(200);
-      res.end();
-      return;
-    }
-
-    const parsedUrl = url.parse(req.url, true);
-    const pathname = parsedUrl.pathname;
-
-    try {
-      if (req.method === 'POST') {
-        let body = '';
-        req.on('data', chunk => {
-          body += chunk.toString();
-        });
-
-        req.on('end', async () => {
-          try {
-            const message = JSON.parse(body);
-            
-            // Update connection status when we receive any message
-            console.log('🔧 HTTP Server: Received POST request, updating connection status to true');
-            updateConnectionStatus(true);
-            
-            const response = await this.handleMessage(message);
-            
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(response));
-          } catch (error) {
-            console.error('[AMP] Error handling POST request:', error);
-            res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: error.message }));
-          }
-        });
-      } else if (req.method === 'GET') {
-        if (pathname === '/ping') {
-          // Update connection status on ping
-          console.log('🔧 HTTP Server: Received ping request, updating connection status to true');
-          updateConnectionStatus(true);
-          
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ type: 'pong', timestamp: Date.now() }));
-        } else if (pathname === '/status') {
-          // Update connection status on status request
-          console.log('🔧 HTTP Server: Received status request, updating connection status to true');
-          updateConnectionStatus(true);
-          
-          let stats;
-          if (sqliteStorage && sqliteStorage.isInitialized) {
-            stats = sqliteStorage.getStorageStats();
-          } else {
-            // Use in-memory storage stats when SQLite is not available
-            stats = inMemoryStorage.getStorageStats();
-          }
-          
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            type: 'status', 
-            connected: true,
-            storageAvailable: !!sqliteStorage,
-            stats: stats,
-            timestamp: Date.now()
-          }));
-        } else if (pathname === '/conversations') {
-          // Get all conversations with optional filters
-          console.log('🔧 HTTP Server: Received conversations request');
-          updateConnectionStatus(true);
-          
-          const query = parsedUrl.query;
-          const limit = parseInt(query.limit) || 50;
-          const offset = parseInt(query.offset) || 0;
-          const provider = query.provider || null;
-          
-          let conversations = [];
-          if (sqliteStorage && sqliteStorage.isInitialized) {
-            conversations = sqliteStorage.getConversations(
-              provider ? { provider } : {},
-              limit,
-              offset
-            );
-          } else {
-            conversations = inMemoryStorage.getConversations(limit, offset);
-          }
-          
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            type: 'conversations',
-            conversations: conversations,
-            count: conversations.length,
-            timestamp: Date.now()
-          }));
-        } else if (pathname === '/chunks') {
-          // Get chunks for a specific conversation
-          console.log('🔧 HTTP Server: Received chunks request');
-          updateConnectionStatus(true);
-          
-          const query = parsedUrl.query;
-          const conversationId = query.conversation_id;
-          const limit = parseInt(query.limit) || 100;
-          
-          if (!conversationId) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'conversation_id required' }));
-            return;
-          }
-          
-          let chunks = [];
-          if (sqliteStorage && sqliteStorage.isInitialized) {
-            chunks = sqliteStorage.getConversationChunks(conversationId, limit);
-          } else {
-            chunks = inMemoryStorage.getChunks(conversationId, limit);
-          }
-          
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            type: 'chunks',
-            chunks: chunks,
-            count: chunks.length,
-            conversation_id: conversationId,
-            timestamp: Date.now()
-          }));
-        } else if (pathname === '/search') {
-          // Search across all stored memory
-          console.log('🔧 HTTP Server: Received search request');
-          updateConnectionStatus(true);
-          
-          const query = parsedUrl.query;
-          const searchTerm = query.q || '';
-          const limit = parseInt(query.limit) || 20;
-          
-          let results = [];
-          if (searchTerm && sqliteStorage && sqliteStorage.isInitialized) {
-            results = sqliteStorage.searchMemory(searchTerm, {}, limit);
-          } else if (searchTerm) {
-            results = inMemoryStorage.search(searchTerm, limit);
-          }
-          
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            type: 'search_results',
-            results: results,
-            count: results.length,
-            query: searchTerm,
-            timestamp: Date.now()
-          }));
-        } else if (pathname === '/recent') {
-          // Get recent activity for live feed
-          console.log('🔧 HTTP Server: Received recent activity request');
-          updateConnectionStatus(true);
-          
-          const query = parsedUrl.query;
-          const limit = parseInt(query.limit) || 20;
-          
-          let activity = [];
-          if (sqliteStorage && sqliteStorage.isInitialized) {
-            activity = sqliteStorage.getRecentActivity(limit);
-          } else {
-            activity = inMemoryStorage.getRecent(limit);
-          }
-          
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            type: 'recent_activity',
-            activity: activity,
-            count: activity.length,
-            timestamp: Date.now()
-          }));
-        } else if (pathname === '/all-memory') {
-          // Get ALL stored memory data for UI display
-          console.log('🔧 HTTP Server: Received all-memory request');
-          updateConnectionStatus(true);
-          
-          const query = parsedUrl.query;
-          const limit = parseInt(query.limit) || 1000;
-          
-          let memoryData = {
-            conversations: [],
-            chunks: [],
-            stats: {},
-            zipperData: { fatZipper: [], thinZipper: [] }
-          };
-          
-          if (sqliteStorage && sqliteStorage.isInitialized) {
-            memoryData.conversations = sqliteStorage.getConversations({}, limit, 0);
-            memoryData.stats = sqliteStorage.getStorageStats();
-            
-            // Get chunks for each conversation
-            for (const conv of memoryData.conversations.slice(0, 50)) {
-              const chunks = sqliteStorage.getConversationChunks(conv.id, 100);
-              memoryData.chunks.push(...chunks);
-            }
-          } else {
-            memoryData = inMemoryStorage.getAllData();
-          }
-          
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ 
-            type: 'all_memory',
-            data: memoryData,
-            timestamp: Date.now()
-          }));
-        } else {
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'Not found' }));
-        }
-      }
-    } catch (error) {
-      console.error('[AMP] Request error:', error);
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: error.message }));
-    }
-  }
-
-  async handleMessage(message) {
-    console.log('[AMP] Received message:', message.type);
-    
-    switch (message.type) {
-      case 'ping':
-        return { type: 'pong', timestamp: Date.now() };
-        
-      case 'store_data':
-        if (sqliteStorage && sqliteStorage.isInitialized) {
-          try {
-            await sqliteStorage.storeData(message.data);
-            return { type: 'data_stored', success: true };
-          } catch (error) {
-            return { type: 'data_stored', success: false, error: error.message };
-          }
-        } else {
-          return { type: 'data_stored', success: false, error: 'Storage not available' };
-        }
-        
-      case 'get_data':
-        if (sqliteStorage && sqliteStorage.isInitialized) {
-          try {
-            const data = await sqliteStorage.getData(message.query);
-            return { type: 'data_retrieved', data };
-          } catch (error) {
-            return { type: 'data_retrieved', error: error.message };
-          }
-        } else {
-          return { type: 'data_retrieved', error: 'Storage not available' };
-        }
-        
-      case 'sendAllMemory':
-        if (Array.isArray(message.chunks)) {
-          let successCount = 0;
-          
-          if (sqliteStorage && sqliteStorage.isInitialized) {
-            // Use SQLite if available
-            for (const chunk of message.chunks) {
-              try {
-                await sqliteStorage.storeMemoryChunk(chunk);
-                successCount++;
-              } catch (error) {
-                console.error('[AMP] Failed to store chunk in SQLite:', error);
-              }
-            }
-            console.log(`[AMP] Stored ${successCount}/${message.chunks.length} chunks in SQLite`);
-          } else {
-            // Use in-memory storage as fallback
-            for (const chunk of message.chunks) {
-              try {
-                inMemoryStorage.storeMemoryChunk(chunk);
-                successCount++;
-              } catch (error) {
-                console.error('[AMP] Failed to store chunk in memory:', error);
-              }
-            }
-            console.log(`[AMP] Stored ${successCount}/${message.chunks.length} chunks in memory (SQLite not available)`);
-          }
-          
-          // Update UI with new stats
-          const stats = sqliteStorage ? sqliteStorage.getStorageStats() : inMemoryStorage.getStorageStats();
-          console.log('🔧 Main: Stats being sent to renderer:', stats);
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            const eventData = {
-              stats: stats,
-              connected: extensionConnected
-            };
-            console.log('🔧 Main: Event data being sent:', eventData);
-            mainWindow.webContents.send('memory-update', eventData);
-          }
-          
-          return {
-            type: 'all_memory_saved',
-            success: true,
-            storedCount: successCount,
-            totalCount: message.chunks.length,
-            timestamp: Date.now()
-          };
-        }
-        return { type: 'all_memory_saved', success: false, error: 'No chunks provided' };
-        
-      case 'overflow':
-        if (sqliteStorage && message.chunk) {
-          try {
-            await sqliteStorage.storeMemoryChunk(message.chunk);
-            console.log('[AMP] Stored overflow chunk:', message.chunk.id);
-            return {
-              type: 'overflow_saved',
-              success: true,
-              chunkId: message.chunk.id,
-              timestamp: Date.now()
-            };
-          } catch (error) {
-            return { type: 'overflow_saved', success: false, error: error.message };
-          }
-        }
-        return { type: 'overflow_saved', success: false, error: 'No chunk provided' };
-        
-      default:
-        return { type: 'error', message: 'Unknown message type' };
-    }
-  }
-}
+// Communication is via Native Messaging (amp-native-host.js)
+// The native host handles all extension <-> desktop communication
+// No HTTP server needed - native messaging is more secure and efficient
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -569,9 +254,9 @@ function createWindow() {
     }
     
     // Test IPC bridge
-    console.log('🔧 Main: Testing IPC bridge...');
+    log('🔧 Main: Testing IPC bridge...');
     setTimeout(() => {
-      console.log('🔧 Main: Sending test event to renderer...');
+      log('🔧 Main: Sending test event to renderer...');
       mainWindow.webContents.send('memory-update', { 
         connected: true, 
         timestamp: Date.now(),
@@ -652,7 +337,7 @@ function createMenu() {
               type: 'info',
               title: 'About AMPiQ',
               message: 'AMPiQ - Advanced Memory Persistence Interface',
-              detail: 'Version 2.0.0\n\nAdvanced memory management for AI conversations.'
+              detail: 'Version 4.0.0\n\nAdvanced memory management for AI conversations.'
             });
           }
         }
@@ -675,31 +360,35 @@ app.whenReady().then(async () => {
   
   // Initialize SQLite storage with error handling
   try {
-    console.log('[AMP] Creating SQLite storage instance...');
+    log('[AMP] Creating SQLite storage instance...');
     sqliteStorage = new AMPSQLiteStorage();
-    console.log('[AMP] SQLite storage instance created, initializing...');
+    log('[AMP] SQLite storage instance created, initializing...');
     const storageInitialized = await sqliteStorage.initialize();
     
     if (!storageInitialized) {
-      console.error('[AMP] Failed to initialize SQLite storage - continuing without storage');
+      logError('[AMP] Failed to initialize SQLite storage - continuing without storage');
       sqliteStorage = null;
     } else {
-      console.log('[AMP] SQLite storage initialized successfully');
+      log('[AMP] SQLite storage initialized successfully');
     }
   } catch (error) {
-    console.error('[AMP] Error initializing SQLite storage:', error);
-    console.error('[AMP] Error stack:', error.stack);
-    console.log('[AMP] Continuing without SQLite storage...');
+    logError('[AMP] Error initializing SQLite storage:', error);
+    logError('[AMP] Error stack:', error.stack);
+    log('[AMP] Continuing without SQLite storage...');
     sqliteStorage = null;
   }
   
-  // Native messaging is handled by separate native host process
+  // Native messaging is handled by separate native host process (amp-native-host.js)
+  // No HTTP server needed - native messaging is direct and secure
   
   createWindow();
   createMenu();
   
   // Start health monitoring
   healthMonitor.startMonitoring();
+  
+  // Initialize native messaging (desktop app acts as the host)
+  initializeNativeMessaging();
   
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -724,41 +413,32 @@ app.on('before-quit', () => {
 
   // Force cleanup after 2 seconds
   setTimeout(() => {
-    console.log('[AMP] Force cleanup - terminating all processes');
+    log('[AMP] Force cleanup - terminating all processes');
     process.exit(0);
   }, 2000);
 });
 
 // Handle uninstall cleanup
 app.on('quit', () => {
-  console.log('[AMP] App quitting - cleaning up processes');
+  log('[AMP] App quitting - cleaning up processes');
   
-  // Kill any remaining AMP processes
+  // Only kill AMPiQ processes (not all electron/node processes which could affect other apps)
   const { exec } = require('child_process');
   
-  // Kill AMPiQ processes
+  // Kill AMPiQ processes only - this is safe and specific to our app
   exec('taskkill /f /im AMPiQ.exe', (error) => {
-    if (error) console.log('[AMP] No AMPiQ.exe processes to kill');
-    else console.log('[AMP] Killed AMPiQ.exe processes');
+    if (error) log('[AMP] No AMPiQ.exe processes to kill');
+    else log('[AMP] Killed AMPiQ.exe processes');
   });
   
-  // Kill Electron processes related to AMP
-  exec('taskkill /f /im electron.exe', (error) => {
-    if (error) console.log('[AMP] No electron.exe processes to kill');
-    else console.log('[AMP] Killed electron.exe processes');
-  });
-  
-  // Kill any Node.js processes that might be hanging
-  exec('taskkill /f /im node.exe', (error) => {
-    if (error) console.log('[AMP] No node.exe processes to kill');
-    else console.log('[AMP] Killed node.exe processes');
-  });
+  // Note: Removed taskkill for electron.exe and node.exe as they could kill
+  // unrelated applications. AMPiQ.exe is sufficient for cleanup.
 });
 
 // Handle window close
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    console.log('[AMP] All windows closed - initiating cleanup');
+    log('[AMP] All windows closed - initiating cleanup');
     
     // Force quit after 1 second
     setTimeout(() => {
@@ -819,7 +499,7 @@ class HealthMonitor {
     }
   }
   handleConnectionLoss() {
-    console.error('Connection lost - attempting reconnection');
+    logError('Connection lost - attempting reconnection');
     setConnectionState(ConnectionState.DISCONNECTED);
   }
   heartbeat() {
@@ -831,7 +511,7 @@ const healthMonitor = new HealthMonitor();
 
 // Initialize native messaging via stdin/stdout
 function initializeNativeMessaging() {
-  console.log('[AMP] Desktop app ready as native messaging host...');
+  log('[AMP] Desktop app ready as native messaging host...');
   
   // The desktop app IS the native messaging host
   // It doesn't need to connect to anything - extensions connect to it
@@ -854,9 +534,9 @@ function sendToExtension(message) {
     buffer.write(json, 4);
     
     process.stdout.write(buffer);
-    console.log('[AMP] Sent to extension:', message.type);
+    log('[AMP] Sent to extension:', message.type);
   } catch (error) {
-    console.error('[AMP] Error sending to extension:', error);
+    logError('[AMP] Error sending to extension:', error);
     messageQueue.enqueue(message); // Enqueue message for retry
   }
 }
@@ -869,14 +549,14 @@ function handleExtensionMessage(message) {
       sendToExtension({ type: 'pong', time: Date.now() });
       setConnectionState(ConnectionState.CONNECTED);
       healthMonitor.heartbeat();
-      console.log('[AMP] Extension connected via native messaging');
+      log('[AMP] Extension connected via native messaging');
       break;
       
     case 'overflow':
       // Handle overflow from slot 5 - save to SQLite
       if (sqliteStorage && message.chunk) {
         sqliteStorage.storeMemoryChunk(message.chunk);
-        console.log('[AMP] Stored overflow chunk:', message.chunk.id);
+        log('[AMP] Stored overflow chunk:', message.chunk.id);
         
         // Send confirmation
         sendToExtension({
@@ -897,7 +577,7 @@ function handleExtensionMessage(message) {
           if (result.success) successCount++;
         }
         
-        console.log(`[AMP] Stored ${successCount}/${message.chunks.length} chunks`);
+        log(`[AMP] Stored ${successCount}/${message.chunks.length} chunks`);
         
         // Send confirmation
         sendToExtension({
@@ -935,7 +615,7 @@ function handleExtensionMessage(message) {
       break;
       
     default:
-      console.log('[AMP] Unknown message type from extension:', message.type);
+      log('[AMP] Unknown message type from extension:', message.type);
   }
   
   // Update UI with latest data
@@ -956,7 +636,7 @@ function updateConnectionStatus(connected) {
     }
     updateConnectionStatus.lastCall = Date.now();
     
-    console.log(`🔧 Main: updateConnectionStatus called with: ${connected}`);
+    log(`🔧 Main: updateConnectionStatus called with: ${connected}`);
     
     // Update the connection state variable
     extensionConnected = connected;
@@ -966,20 +646,20 @@ function updateConnectionStatus(connected) {
     
     // Send status to renderer
     if (mainWindow && !mainWindow.isDestroyed()) {
-      console.log('🔧 Main: Sending memory-update to renderer with connected:', connected);
+      log('🔧 Main: Sending memory-update to renderer with connected:', connected);
       const eventData = {
         connected: connected,
         timestamp: Date.now()
       };
-      console.log('🔧 Main: Event data being sent:', eventData);
+      log('🔧 Main: Event data being sent:', eventData);
       mainWindow.webContents.send('memory-update', eventData);
     } else {
       console.warn('🔧 Main: Cannot send to renderer - window not available');
     }
     
-    console.log(`[AMP] HTTP connection: ${connected ? 'Connected' : 'Disconnected'}`);
+    log(`[AMP] HTTP connection: ${connected ? 'Connected' : 'Disconnected'}`);
   } catch (error) {
-    console.error('updateConnectionStatus failed:', error);
+    logError('updateConnectionStatus failed:', error);
   }
 }
 
@@ -1007,12 +687,12 @@ function updateUI() {
 // Legacy IPC handlers (for compatibility)
 ipcMain.on('extension-connected', (event) => {
   extensionConnected = true;
-  console.log('[AMP] Extension connected via IPC (legacy)');
+  log('[AMP] Extension connected via IPC (legacy)');
 });
 
 ipcMain.on('extension-disconnected', (event) => {
   extensionConnected = false;
-  console.log('[AMP] Extension disconnected via IPC (legacy)');
+  log('[AMP] Extension disconnected via IPC (legacy)');
 });
 
 ipcMain.on('extension-stats', (event, stats) => {
@@ -1036,7 +716,7 @@ ipcMain.handle('search-memory', async (event, query) => {
     
     return results;
   } catch (error) {
-    console.error('[AMP] Search failed:', error);
+    logError('[AMP] Search failed:', error);
     return [];
   }
 });
@@ -1044,11 +724,23 @@ ipcMain.handle('search-memory', async (event, query) => {
 // Handle native message requests from renderer
 ipcMain.handle('send-native-message', async (event, message) => {
   try {
-    // Forward the message to the HTTP server
-    const response = await httpServer.handleMessage(message);
+    // Handle message directly since we're the native host
+    let response = { success: false, error: 'Unknown message type' };
+    
+    if (message.action === 'searchMemory' && sqliteStorage && sqliteStorage.isInitialized) {
+      const results = sqliteStorage.searchMemory(message.query, {}, 20);
+      response = { success: true, results };
+    } else if (message.action === 'getStats' && sqliteStorage && sqliteStorage.isInitialized) {
+      const stats = sqliteStorage.getStorageStats();
+      response = { success: true, stats };
+    } else if (message.action === 'getConversations' && sqliteStorage && sqliteStorage.isInitialized) {
+      const conversations = sqliteStorage.getConversations({}, 50, 0);
+      response = { success: true, conversations };
+    }
+    
     return response;
   } catch (error) {
-    console.error('[AMP] Native message failed:', error);
+    logError('[AMP] Native message failed:', error);
     return { error: error.message };
   }
 });
@@ -1066,20 +758,20 @@ ipcMain.handle('get-memory-data', async (event) => {
       memoryData = inMemoryStorage.getAllMemoryChunks();
     }
     
-    console.log(`🔧 Main: Returning ${memoryData.length} memory chunks to renderer`);
+    log(`🔧 Main: Returning ${memoryData.length} memory chunks to renderer`);
     return memoryData;
   } catch (error) {
-    console.error('[AMP] Get memory data failed:', error);
+    logError('[AMP] Get memory data failed:', error);
     return [];
   }
 });
 
 // Error handling
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
+  logError('Uncaught Exception:', error);
 });
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  logError('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 // Handle native messaging with SQLite integration
@@ -1098,7 +790,7 @@ async function handleNativeMessage(message, event) {
           for (const chunk of message.chunks) {
             await sqliteStorage.storeMemoryChunk(chunk);
           }
-          console.log(`Stored ${message.chunks.length} chunks in SQLite`);
+          log(`Stored ${message.chunks.length} chunks in SQLite`);
         }
         break;
         
@@ -1147,7 +839,7 @@ async function handleNativeMessage(message, event) {
         break;
     }
   } catch (error) {
-    console.error('Error handling native message:', error);
+    logError('Error handling native message:', error);
   }
 }
 

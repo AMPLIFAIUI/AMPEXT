@@ -1,16 +1,122 @@
 // © 2025 AMPIQ All rights reserved.
 // Background script for cross-tab memory management and AMP app communication
 // Hot Memory Priority - minimal storage, maximum performance
-// Version: 2.0.2 - Full MemoryPool integration
+// Version: 4.0.0 - Production
 
-// Import utils.js which contains MemoryPool class
-// This works in Manifest V3 Service Workers
-try {
-  importScripts('utils.js');
-  console.log('✅ AMP Background: utils.js imported successfully');
-} catch (error) {
-  console.error('❌ AMP Background: Failed to import utils.js:', error);
+// IMPORTANT: importScripts MUST be at the very top, synchronously, before any other code
+// This is a Chrome Service Worker requirement
+importScripts('utils.js');
+importScripts('license.js');
+
+// Production logging - set to false to disable debug logs
+const AMP_DEBUG = false;
+const log = (...args) => AMP_DEBUG && console.log('[AMP Background]', ...args);
+const logError = (...args) => console.error('[AMP Background]', ...args);
+
+// ADAPTIVE PERFORMANCE CONFIGURATION
+// Detects system capabilities and adjusts accordingly
+const PERF_CONFIG = {
+  // Base interval frequencies (in ms)
+  STATS_UPDATE_INTERVAL: 15000,      // 15s base
+  HEALTH_CHECK_INTERVAL: 30000,      // 30s base
+  CONNECTION_RETRY_INTERVAL: 30000,  // 30s base
+  MEMORY_SEND_INTERVAL: 5000,        // 5s base
+  MAINTENANCE_INTERVAL: 60000,       // 1min base
+  STATS_BROADCAST_INTERVAL: 10000,   // 10s base
+  
+  // Memory limits - can use more RAM for better performance
+  MAX_QUEUE_SIZE: 1000,              // Allow larger queue
+  MAX_ACTIVITY_ENTRIES: 100,         // More activity history
+  MAX_HOT_MEMORY_MB: 50,             // Up to 50MB hot memory when available
+  
+  // Throttling
+  IDLE_THRESHOLD: 120000,            // 2 minutes = idle (more lenient)
+  THROTTLE_MULTIPLIER_IDLE: 2,       // 2x slower when idle (less aggressive)
+  
+  // Performance mode
+  performanceMode: 'balanced',       // 'power-saver', 'balanced', 'performance'
+};
+
+// Detect system capabilities and adjust performance
+async function detectSystemCapabilities() {
+  try {
+    // Check available memory (if API available)
+    if (navigator.deviceMemory) {
+      const memoryGB = navigator.deviceMemory;
+      log(`📊 System memory: ${memoryGB}GB`);
+      
+      if (memoryGB >= 8) {
+        // High-end system - use more resources
+        PERF_CONFIG.performanceMode = 'performance';
+        PERF_CONFIG.MAX_HOT_MEMORY_MB = 100;
+        PERF_CONFIG.STATS_UPDATE_INTERVAL = 10000;
+        PERF_CONFIG.MEMORY_SEND_INTERVAL = 3000;
+        log('📊 Performance mode: HIGH (8GB+ RAM detected)');
+      } else if (memoryGB >= 4) {
+        // Mid-range system - balanced
+        PERF_CONFIG.performanceMode = 'balanced';
+        PERF_CONFIG.MAX_HOT_MEMORY_MB = 50;
+        log('📊 Performance mode: BALANCED (4GB+ RAM detected)');
+      } else {
+        // Low-end system - conserve resources
+        PERF_CONFIG.performanceMode = 'power-saver';
+        PERF_CONFIG.MAX_HOT_MEMORY_MB = 25;
+        PERF_CONFIG.STATS_UPDATE_INTERVAL = 30000;
+        PERF_CONFIG.MEMORY_SEND_INTERVAL = 10000;
+        PERF_CONFIG.THROTTLE_MULTIPLIER_IDLE = 4;
+        log('📊 Performance mode: POWER-SAVER (low RAM detected)');
+      }
+    }
+    
+    // Check for hardware concurrency (CPU cores)
+    if (navigator.hardwareConcurrency) {
+      const cores = navigator.hardwareConcurrency;
+      log(`📊 CPU cores: ${cores}`);
+      
+      if (cores >= 8) {
+        // Many cores - can do more parallel processing
+        PERF_CONFIG.MAX_QUEUE_SIZE = 2000;
+      }
+    }
+    
+    // Check connection type for network-related settings
+    if (navigator.connection) {
+      const conn = navigator.connection;
+      log(`📊 Connection: ${conn.effectiveType}, downlink: ${conn.downlink}Mbps`);
+      
+      if (conn.effectiveType === '4g' && conn.downlink >= 10) {
+        // Fast connection - can sync more frequently
+        PERF_CONFIG.MEMORY_SEND_INTERVAL = Math.min(PERF_CONFIG.MEMORY_SEND_INTERVAL, 3000);
+      }
+    }
+    
+  } catch (error) {
+    log('📊 Could not detect system capabilities, using balanced defaults');
+  }
 }
+
+// Initialize capability detection
+detectSystemCapabilities();
+
+// Idle state tracking
+let isExtensionIdle = false;
+let lastActivityTime = Date.now();
+let activeIntervalIds = [];
+
+// Function to stop all active intervals (for license deactivation)
+function stopAllIntervals() {
+  log('Stopping all active intervals...');
+  activeIntervalIds.forEach(id => {
+    try {
+      clearInterval(id);
+    } catch (e) {
+      // Ignore errors clearing intervals
+    }
+  });
+  activeIntervalIds = [];
+}
+
+log('✅ AMP Background: utils.js imported successfully');
 
 // Message Queue for offline desktop app
 class MessageQueue {
@@ -102,7 +208,7 @@ class StatsManager {
       try {
         callback(this.stats);
       } catch (error) {
-        console.error('Stats listener error:', error);
+        logError('Stats listener error:', error);
       }
     });
   }
@@ -136,30 +242,38 @@ chrome.runtime.onStartup.addListener(async () => {
     try {
       initializeNativeMessaging();
     } catch (error) {
-      console.error('Native messaging failed during startup:', error);
+      logError('Native messaging failed during startup:', error);
     }
   }, 3000);
   
-  // Retry connection every 30 seconds if not connected
-  setInterval(async () => {
+  // Retry connection every 60 seconds if not connected (reduced frequency)
+  const retryInterval = setInterval(async () => {
+    // Skip if idle
+    if (isExtensionIdle) return;
+    
     if (!desktopConnected) {
-      console.log('🔄 Retrying native messaging connection...');
+      log('🔄 Retrying native messaging connection...');
       try {
         await testDesktopConnection();
       } catch (error) {
-        console.error('Native messaging retry failed:', error);
+        logError('Native messaging retry failed:', error);
       }
     }
-  }, 30000);
+  }, PERF_CONFIG.CONNECTION_RETRY_INTERVAL);
+  activeIntervalIds.push(retryInterval);
   
-  // Update stats every 10 seconds
-  setInterval(() => {
+  // Update stats every 30 seconds (reduced from 10s)
+  const statsInterval = setInterval(() => {
+    // Skip if idle
+    if (isExtensionIdle) return;
+    
     try {
       updateStats();
     } catch (error) {
-      console.error('Failed to update stats:', error);
+      logError('Failed to update stats:', error);
     }
-  }, 10000);
+  }, PERF_CONFIG.STATS_UPDATE_INTERVAL);
+  activeIntervalIds.push(statsInterval);
 });
 
 // Initialize memory pool on install
@@ -175,12 +289,12 @@ chrome.runtime.onInstalled.addListener(async () => {
     initializeNativeMessaging();
   }, 3000);
   
-  console.log('AMP: Extension installed and ready');
+  log('AMP: Extension installed and ready');
 });
 
 // Cleanup on shutdown
 chrome.runtime.onSuspend.addListener(async () => {
-  console.log('AMP Background: Extension shutting down, performing cleanup...');
+  log('AMP Background: Extension shutting down, performing cleanup...');
   
   // Stop health monitoring
   stopHealthMonitoring();
@@ -189,13 +303,13 @@ chrome.runtime.onSuspend.addListener(async () => {
   if (activeMemoryPool && activeMemoryPool.saveToStorage) {
     try {
       await activeMemoryPool.saveToStorage();
-      console.log('AMP Background: Final save completed');
+      log('AMP Background: Final save completed');
     } catch (error) {
-      console.error('AMP Background: Final save failed:', error);
+      logError('AMP Background: Final save failed:', error);
     }
   }
   
-  console.log('AMP Background: Cleanup completed');
+  log('AMP Background: Cleanup completed');
 });
 
 // Dummy functions to prevent errors from removed badge system
@@ -247,7 +361,7 @@ function markDataProcessing(bytesProcessed = 0) {
   if (activeMemoryPool) {
     const liveBytes = activeMemoryPool.getLiveBytesCount();
     if (liveBytes && bytesProcessed > 0) {
-      console.log(`🔴 Processing ${bytesProcessed} bytes - Ring should be glowing`);
+      log(`🔴 Processing ${bytesProcessed} bytes - Ring should be glowing`);
       setRingState('processing');
       // Reset to normal after processing
       setTimeout(() => setRingState('normal'), 2000);
@@ -274,18 +388,18 @@ async function openAmpWindow() {
   if (foundWindow) {
     try {
       await chrome.windows.remove(foundWindow.id);
-      console.log('🔄 Closed existing AMP window before opening new one');
+      log('🔄 Closed existing AMP window before opening new one');
       ampWindowId = null;
       ampWindowOpen = false;
     } catch (error) {
-      console.error('Failed to close existing window:', error);
+      logError('Failed to close existing window:', error);
     }
   }
   
   // Wait a moment for window to close, then open new one
   setTimeout(async () => {
   try {
-      console.log('🚀 Opening new AMP window...');
+      log('🚀 Opening new AMP window...');
       if (!chrome.windows) throw new Error('Windows API not available - check permissions');
     const currentWindow = await chrome.windows.getCurrent();
       const sidebarWidth = 600;
@@ -298,7 +412,7 @@ async function openAmpWindow() {
         top = Math.max(50, currentWindow.top + 50);
         if (left < 50) {
           left = Math.max(50, currentWindow.left + (currentWindow.width - sidebarWidth) / 2);
-          console.log('🔄 Using center positioning to avoid cutoff');
+          log('🔄 Using center positioning to avoid cutoff');
         }
       }
       let window;
@@ -325,9 +439,9 @@ async function openAmpWindow() {
       }
     ampWindowId = window.id;
     ampWindowOpen = true;
-      console.log('✅ AMP sidebar window opened successfully:', ampWindowId);
+      log('✅ AMP sidebar window opened successfully:', ampWindowId);
   } catch (error) {
-    console.error('❌ Failed to open AMP window:', error);
+    logError('❌ Failed to open AMP window:', error);
     ampWindowId = null;
     ampWindowOpen = false;
   }
@@ -340,9 +454,9 @@ async function closeAmpWindow() {
       await chrome.windows.remove(ampWindowId);
       ampWindowId = null;
       ampWindowOpen = false;
-      console.log('AMP window closed');
+      log('AMP window closed');
     } catch (error) {
-      console.error('Failed to close AMP window:', error);
+      logError('Failed to close AMP window:', error);
     }
   }
 }
@@ -357,7 +471,7 @@ async function switchMonitoringTarget(tab) {
     activeMonitoringTabId = tab.id;
     activeMonitoringWindowId = tab.windowId;
     
-    console.log(`🔄 AMP: Switched monitoring from tab ${previousTabId} to tab ${activeMonitoringTabId} (window ${activeMonitoringWindowId})`);
+    log(`🔄 AMP: Switched monitoring from tab ${previousTabId} to tab ${activeMonitoringTabId} (window ${activeMonitoringWindowId})`);
     
     // Notify all tabs about the monitoring change
     await notifyTabsAboutMonitoringChange(previousTabId, activeMonitoringTabId);
@@ -372,7 +486,7 @@ async function switchMonitoringTarget(tab) {
     await showMonitoringSwitchNotification(tab);
     
   } catch (error) {
-    console.error('Failed to switch monitoring target:', error);
+    logError('Failed to switch monitoring target:', error);
   }
 }
 
@@ -387,10 +501,10 @@ async function notifyTabsAboutMonitoringChange(previousTabId, newTabId) {
           isActive: false,
           tabId: previousTabId
         });
-        console.log(`🔴 Notified tab ${previousTabId} to stop monitoring`);
+        log(`🔴 Notified tab ${previousTabId} to stop monitoring`);
       } catch (error) {
         // Tab might be closed or not have content script
-        console.log(`Tab ${previousTabId} not available for monitoring status update`);
+        log(`Tab ${previousTabId} not available for monitoring status update`);
       }
     }
     
@@ -402,14 +516,14 @@ async function notifyTabsAboutMonitoringChange(previousTabId, newTabId) {
           isActive: true,
           tabId: newTabId
         });
-        console.log(`🟢 Notified tab ${newTabId} to start monitoring`);
+        log(`🟢 Notified tab ${newTabId} to start monitoring`);
       } catch (error) {
         // Tab might not have content script yet
-        console.log(`Tab ${newTabId} not ready for monitoring status update`);
+        log(`Tab ${newTabId} not ready for monitoring status update`);
       }
     }
   } catch (error) {
-    console.error('Failed to notify tabs about monitoring change:', error);
+    logError('Failed to notify tabs about monitoring change:', error);
   }
 }
 
@@ -429,7 +543,7 @@ async function updateMonitoringIndicator() {
       chrome.action.setBadgeText({ text: '●' });
       chrome.action.setBadgeBackgroundColor({ color: [0, 255, 0, 255] }); // Green
       
-      console.log(`🟢 Updated monitoring indicator for ${provider}`);
+      log(`🟢 Updated monitoring indicator for ${provider}`);
     } else {
       // No active monitoring
       chrome.action.setTitle({ title: 'AMP - Auto Memory Persistence (No active monitoring)' });
@@ -437,7 +551,7 @@ async function updateMonitoringIndicator() {
       chrome.action.setBadgeBackgroundColor({ color: [0, 0, 0, 0] });
     }
   } catch (error) {
-    console.error('Failed to update monitoring indicator:', error);
+    logError('Failed to update monitoring indicator:', error);
   }
 }
 
@@ -456,9 +570,9 @@ async function showMonitoringSwitchNotification(tab) {
       priority: 1
     });
     
-    console.log(`📢 Notification: Now monitoring ${provider} on ${hostname}`);
+    log(`📢 Notification: Now monitoring ${provider} on ${hostname}`);
   } catch (error) {
-    console.error('Failed to show monitoring switch notification:', error);
+    logError('Failed to show monitoring switch notification:', error);
   }
 }
 
@@ -475,10 +589,10 @@ async function showMonitoringSwitchHint(tab) {
       hostname: hostname
     });
     
-    console.log(`💡 Hint: ${provider} on ${hostname} can be monitored`);
+    log(`💡 Hint: ${provider} on ${hostname} can be monitored`);
   } catch (error) {
     // Tab might not have content script yet, which is normal
-    console.log(`Tab ${tab.id} not ready for monitoring hint`);
+    log(`Tab ${tab.id} not ready for monitoring hint`);
   }
 }
 
@@ -487,7 +601,7 @@ chrome.windows.onRemoved.addListener((windowId) => {
   if (windowId === ampWindowId) {
     ampWindowId = null;
     ampWindowOpen = false;
-    console.log('AMP window was closed by user');
+    log('AMP window was closed by user');
   }
 });
 
@@ -497,12 +611,12 @@ chrome.action.onClicked.addListener(async (tab) => {
   
   // Debounce rapid clicks
   if (now - lastIconClickTime < ICON_CLICK_DEBOUNCE) {
-    console.log('🔴 Extension icon click debounced');
+    log('🔴 Extension icon click debounced');
     return;
   }
   lastIconClickTime = now;
   
-  console.log('🔴 Extension icon clicked - switching monitoring target');
+  log('🔴 Extension icon clicked - switching monitoring target');
   
   // Switch monitoring to the current tab/window
   await switchMonitoringTarget(tab);
@@ -517,22 +631,22 @@ async function initializeMemoryPool() {
   try {
     // Try to use the real MemoryPool class from utils.js
     if (typeof MemoryPool !== 'undefined') {
-      console.log('✅ AMP Background: Using REAL MemoryPool class from utils.js');
+      log('✅ AMP Background: Using REAL MemoryPool class from utils.js');
       activeMemoryPool = new MemoryPool();
       
       // Load existing data from storage
       const loadSuccess = await activeMemoryPool.loadFromStorage();
       if (loadSuccess) {
-        console.log('✅ AMP Background: Loaded existing memory data from storage');
+        log('✅ AMP Background: Loaded existing memory data from storage');
       } else {
-        console.log('ℹ️ AMP Background: No existing memory data found, starting fresh');
+        log('ℹ️ AMP Background: No existing memory data found, starting fresh');
       }
       
-      console.log('✅ AMP Background: Real MemoryPool initialized with:');
-      console.log(`   - 5x1MB hot slots`);
-      console.log(`   - S1-S9 progression system`);
-      console.log(`   - Dual zipper (fat + thin)`);
-      console.log(`   - Desktop overflow support`);
+      log('✅ AMP Background: Real MemoryPool initialized with:');
+      log(`   - 5x1MB hot slots`);
+      log(`   - S1-S9 progression system`);
+      log(`   - Dual zipper (fat + thin)`);
+      log(`   - Desktop overflow support`);
       
       return true;
     }
@@ -541,10 +655,10 @@ async function initializeMemoryPool() {
     console.warn('⚠️ AMP Background: MemoryPool class not found, using fallback mode...');
     activeMemoryPool = createFallbackMemoryPool();
     
-    console.log('AMP Background: Fallback memory pool initialized');
+    log('AMP Background: Fallback memory pool initialized');
     return true;
   } catch (error) {
-    console.error('❌ AMP Background: Failed to initialize memory pool:', error);
+    logError('❌ AMP Background: Failed to initialize memory pool:', error);
     
     // Create fallback on error
     activeMemoryPool = createFallbackMemoryPool();
@@ -660,10 +774,10 @@ function createFallbackMemoryPool() {
         providerConvs.add(chunk.conversation_id);
         this.providerIndex.set(chunk.ai_provider, providerConvs);
         
-        console.log(`AMP Background: Chunk added (fallback) - ${text.length} chars`);
+        log(`AMP Background: Chunk added (fallback) - ${text.length} chars`);
         return chunk;
       } catch (error) {
-        console.error('AMP Background: Failed to add chunk:', error);
+        logError('AMP Background: Failed to add chunk:', error);
         return null;
       }
     },
@@ -718,16 +832,16 @@ function createFallbackMemoryPool() {
     },
     
     performWaterfallCascade: async function() {
-      console.log('AMP Background: Waterfall cascade triggered (fallback)');
+      log('AMP Background: Waterfall cascade triggered (fallback)');
     },
     
     performReverseInjection: async function() {
-      console.log('AMP Background: Reverse injection triggered (fallback)');
+      log('AMP Background: Reverse injection triggered (fallback)');
       return [];
     },
     
     retryOverflowQueue: async function() {
-      console.log('AMP Background: Overflow queue retry (fallback)');
+      log('AMP Background: Overflow queue retry (fallback)');
     },
     
     saveToStorage: async function() {
@@ -743,7 +857,7 @@ function createFallbackMemoryPool() {
         await chrome.storage.local.set({ amp_fallback_data: data });
         return true;
       } catch (error) {
-        console.error('Failed to save fallback data:', error);
+        logError('Failed to save fallback data:', error);
         return false;
       }
     },
@@ -762,7 +876,7 @@ function createFallbackMemoryPool() {
         }
         return false;
       } catch (error) {
-        console.error('Failed to load fallback data:', error);
+        logError('Failed to load fallback data:', error);
         return false;
       }
     }
@@ -799,7 +913,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     activeMonitoringTabId = null;
     activeMonitoringWindowId = null;
     await updateMonitoringIndicator();
-    console.log('🔄 AMP: Monitoring target closed, monitoring disabled');
+    log('🔄 AMP: Monitoring target closed, monitoring disabled');
   }
 });
 
@@ -844,10 +958,10 @@ async function updateTabInfo(tabId, url = null) {
       };
       
       activeTabs.set(tabId.toString(), tabInfo);
-      console.log(`AMP Background: Updated tab ${tabId} - ${provider} (${hostname})`);
+      log(`AMP Background: Updated tab ${tabId} - ${provider} (${hostname})`);
     }
   } catch (error) {
-    console.error('Failed to update tab info:', error);
+    logError('Failed to update tab info:', error);
   }
 }
 
@@ -873,7 +987,7 @@ async function checkContextCarryover(tabId, provider, hostname) {
     
     return false;
   } catch (error) {
-    console.error('Error checking context carryover:', error);
+    logError('Error checking context carryover:', error);
     return false;
   }
 }
@@ -884,7 +998,7 @@ async function showContextCarryoverPrompt(tabId, provider, hostname) {
     // Check if tab exists and is accessible before sending message
     const tab = await chrome.tabs.get(tabId);
     if (!tab || !tab.url) {
-      console.log(`AMP Background: Tab ${tabId} not found or not accessible, skipping context carryover prompt`);
+      log(`AMP Background: Tab ${tabId} not found or not accessible, skipping context carryover prompt`);
       return;
     }
     
@@ -896,13 +1010,13 @@ async function showContextCarryoverPrompt(tabId, provider, hostname) {
       timestamp: Date.now()
     });
     
-    console.log(`AMP Background: Context carryover prompt sent to tab ${tabId}`);
+    log(`AMP Background: Context carryover prompt sent to tab ${tabId}`);
   } catch (error) {
     // Don't log errors for tabs that don't exist - this is expected
     if (error.message.includes('Receiving end does not exist') || error.message.includes('Could not establish connection')) {
-      console.log(`AMP Background: Tab ${tabId} not ready for messages, skipping context carryover prompt`);
+      log(`AMP Background: Tab ${tabId} not ready for messages, skipping context carryover prompt`);
     } else {
-      console.error('Failed to show context carryover prompt:', error);
+      logError('Failed to show context carryover prompt:', error);
     }
   }
 }
@@ -922,15 +1036,43 @@ function getAIProviderFromUrl(url) {
   return 'unknown';
 }
 
+// Idle detection - check every 30 seconds
+setInterval(() => {
+  const timeSinceActivity = Date.now() - lastActivityTime;
+  const wasIdle = isExtensionIdle;
+  isExtensionIdle = timeSinceActivity > PERF_CONFIG.IDLE_THRESHOLD;
+  
+  if (isExtensionIdle !== wasIdle) {
+    if (isExtensionIdle) {
+      log('📊 AMP: Entering idle mode - reducing background activity');
+    } else {
+      log('📊 AMP: Resuming active mode');
+    }
+  }
+}, 30000);
+
+// Record activity on any message
+function recordActivity() {
+  lastActivityTime = Date.now();
+  if (isExtensionIdle) {
+    isExtensionIdle = false;
+    log('📊 AMP: Activity detected - resuming active mode');
+  }
+}
+
 // Message handling
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  recordActivity(); // Track activity
   handleMessage(message, sender, sendResponse);
   return true; // Keep message channel open for async response
 });
 
 async function handleMessage(message, sender, sendResponse) {
   try {
-    console.log('AMP Background: Received message:', message.action, message);
+    // Reduced logging - only log important actions
+    if (!['ping', 'getMemoryStats', 'statsUpdate'].includes(message.action)) {
+      log('AMP Background: Received message:', message.action);
+    }
     switch (message.action) {
       case 'storeMemory':
         await handleStoreMemory(message, sender);
@@ -938,9 +1080,9 @@ async function handleMessage(message, sender, sendResponse) {
         break;
         
       case 'getMemoryStats':
-        console.log('🔧 Background: Received getMemoryStats request');
+        log('🔧 Background: Received getMemoryStats request');
         const stats = await handleGetMemoryStats();
-        console.log('🔧 Background: Sending stats response:', stats);
+        log('🔧 Background: Sending stats response:', stats);
         sendResponse({ success: true, stats });
         break;
         
@@ -980,7 +1122,7 @@ async function handleMessage(message, sender, sendResponse) {
             amp_context_carryover_preferences: preferences
           });
           
-          console.log(`AMP Background: Context carryover preference set for ${hostname}: ${carryover}`);
+          log(`AMP Background: Context carryover preference set for ${hostname}: ${carryover}`);
           
           // Update tab info with the preference
           if (activeTabs.has(tabId)) {
@@ -992,7 +1134,7 @@ async function handleMessage(message, sender, sendResponse) {
           
           sendResponse({ success: true });
         } catch (error) {
-          console.error('Error setting context carryover preference:', error);
+          logError('Error setting context carryover preference:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1010,10 +1152,10 @@ async function handleMessage(message, sender, sendResponse) {
             amp_context_carryover_preferences: preferences
           });
           
-          console.log(`AMP Background: Context carryover preference cleared for ${hostname}`);
+          log(`AMP Background: Context carryover preference cleared for ${hostname}`);
           sendResponse({ success: true });
         } catch (error) {
-          console.error('Error clearing context carryover preference:', error);
+          logError('Error clearing context carryover preference:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1045,14 +1187,102 @@ async function handleMessage(message, sender, sendResponse) {
           const tabId = sender.tab?.id;
           sendResponse({ success: true, tabId: tabId });
         } catch (error) {
-          console.error('Error getting tab ID:', error);
+          logError('Error getting tab ID:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+        
+      case 'triggerCascade':
+        try {
+          log('💧 AMP Background: Memory cascade triggered - pushing data to desktop app via native messaging');
+          
+          // Perform waterfall cascade in memory pool
+          if (activeMemoryPool && activeMemoryPool.performWaterfallCascade) {
+            await activeMemoryPool.performWaterfallCascade();
+          }
+          
+          // Send ALL current memory to desktop app via NATIVE MESSAGING (not HTTP)
+          if (desktopConnected && nativePort) {
+            const allChunks = activeMemoryPool ? activeMemoryPool.getAllChunks() : [];
+            
+            if (allChunks.length > 0) {
+              try {
+                // Use native messaging to send cascade data
+                const response = await sendNativeMessage({
+                  type: 'cascadeMemory',
+                  chunks: allChunks,
+                  timestamp: Date.now(),
+                  action: 'cascade'
+                });
+                
+                if (response && response.success) {
+                  log(`💧 AMP: Cascaded ${allChunks.length} chunks to desktop app via native messaging`);
+                  
+                  // Clear browser memory after successful cascade to desktop
+                  // This keeps browser memory minimal when desktop app is handling storage
+                  if (activeMemoryPool) {
+                    // Keep only the most recent 10 chunks in browser as hot cache
+                    const chunksToKeep = allChunks
+                      .sort((a, b) => b.timestamp - a.timestamp)
+                      .slice(0, 10);
+                    
+                    // Clear all slots
+                    for (const slot of activeMemoryPool.slots) {
+                      slot.chunks.clear();
+                      slot.currentSize = 0;
+                    }
+                    activeMemoryPool.hotPool.clear();
+                    
+                    // Re-add only recent chunks
+                    for (const chunk of chunksToKeep) {
+                      await activeMemoryPool.addChunk(chunk);
+                    }
+                    
+                    log(`💧 AMP: Browser memory cleared, kept ${chunksToKeep.length} recent chunks as cache`);
+                  }
+                  
+                  sendResponse({ success: true, cascaded: allChunks.length });
+                } else {
+                  logError('💧 AMP: Desktop cascade failed:', response?.error);
+                  sendResponse({ success: false, error: response?.error || 'Cascade failed' });
+                }
+              } catch (nativeError) {
+                logError('💧 AMP: Native messaging error:', nativeError);
+                sendResponse({ success: false, error: 'Native messaging failed' });
+              }
+            } else {
+              sendResponse({ success: true, cascaded: 0, message: 'No data to cascade' });
+            }
+          } else {
+            // No desktop app - just perform internal cascade
+            log('💧 AMP: No desktop app connected, performing internal cascade only');
+            sendResponse({ success: true, cascaded: 0, message: 'Internal cascade only (no desktop)' });
+          }
+        } catch (error) {
+          logError('💧 AMP Background: Cascade error:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+        
+      case 'triggerInject':
+        // Alias for triggerReverseInjection
+        try {
+          log('⬆️ AMP Background: Inject (reverse injection) triggered');
+          if (activeMemoryPool && activeMemoryPool.performReverseInjection) {
+            const result = await activeMemoryPool.performReverseInjection('context', '', 5);
+            sendResponse({ success: true, injected: result });
+          } else {
+            sendResponse({ success: false, error: 'Injection not available' });
+          }
+        } catch (error) {
+          logError('AMP Background: Inject error:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
         
       case 'triggerReverseInjection':
         try {
-          console.log('🔄 AMP Background: Reverse injection triggered:', message.triggerType);
+          log('🔄 AMP Background: Reverse injection triggered:', message.triggerType);
           if (activeMemoryPool && activeMemoryPool.performReverseInjection) {
             const result = await activeMemoryPool.performReverseInjection(message.triggerType || 'scroll', '', 5);
             sendResponse({ success: true, injected: result });
@@ -1061,7 +1291,7 @@ async function handleMessage(message, sender, sendResponse) {
             sendResponse({ success: false, error: 'Reverse injection not available' });
           }
         } catch (error) {
-          console.error('AMP Background: Reverse injection error:', error);
+          logError('AMP Background: Reverse injection error:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1088,19 +1318,18 @@ async function handleMessage(message, sender, sendResponse) {
             });
           }
           
-          // Also try to get data from desktop app (cold storage)
+          // Also try to get data from desktop app via native messaging (cold storage)
           try {
-            const desktopResponse = await fetch('http://127.0.0.1:3000/all-memory?limit=100', {
-              method: 'GET',
-              signal: AbortSignal.timeout(2000)
-            });
-            
-            if (desktopResponse.ok) {
-              const desktopData = await desktopResponse.json();
-              if (desktopData.data && desktopData.data.chunks) {
+            if (nativePort && desktopConnected) {
+              const desktopResponse = await sendNativeMessage({ 
+                type: 'getAllMemory',
+                limit: 100 
+              });
+              
+              if (desktopResponse && desktopResponse.success && desktopResponse.chunks) {
                 // Add desktop chunks that aren't already in hot pool
                 const hotIds = new Set(memoryData.map(c => c.id));
-                desktopData.data.chunks.forEach((chunk, index) => {
+                desktopResponse.chunks.forEach((chunk, index) => {
                   if (!hotIds.has(chunk.id)) {
                     memoryData.push({
                       id: chunk.id || `desktop-${index}`,
@@ -1117,13 +1346,13 @@ async function handleMessage(message, sender, sendResponse) {
               }
             }
           } catch (desktopError) {
-            console.log('🔧 Background: Desktop app not available for cold storage query');
+            log('🔧 Background: Desktop app not available for cold storage query');
           }
           
-          console.log(`🔧 Background: Returning ${memoryData.length} memory chunks to UI`);
+          log(`🔧 Background: Returning ${memoryData.length} memory chunks to UI`);
           sendResponse({ success: true, data: memoryData });
         } catch (error) {
-          console.error('Error getting memory data:', error);
+          logError('Error getting memory data:', error);
           sendResponse({ success: false, error: error.message });
         }
         break;
@@ -1131,13 +1360,81 @@ async function handleMessage(message, sender, sendResponse) {
       case 'sendToDesktop':
         // MemoryPool is sending overflow data to desktop
         try {
-          console.log('🔧 Background: Received sendToDesktop request from MemoryPool:', message.type);
+          log('🔧 Background: Received sendToDesktop request from MemoryPool:', message.type);
           const response = await sendToDesktopApp(message);
-          console.log('🔧 Background: Desktop response:', response);
+          log('🔧 Background: Desktop response:', response);
           sendResponse(response || { success: false, error: 'No response from desktop' });
         } catch (error) {
-          console.error('🔧 Background: sendToDesktop failed:', error);
+          logError('🔧 Background: sendToDesktop failed:', error);
           sendResponse({ success: false, error: error.message });
+        }
+        break;
+
+      // ==================== LICENSE MANAGEMENT ====================
+      case 'getLicenseState':
+        try {
+          if (globalThis.AMP_License) {
+            const state = globalThis.AMP_License.getState();
+            sendResponse({ success: true, ...state });
+          } else {
+            sendResponse({ success: false, error: 'License module not loaded' });
+          }
+        } catch (error) {
+          logError('Error getting license state:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+        
+      case 'activateLicense':
+        try {
+          if (globalThis.AMP_License) {
+            const result = await globalThis.AMP_License.activate(message.licenseKey);
+            if (result.success) {
+              // Re-initialize features based on new license
+              await initializeMemoryPool();
+              startHealthMonitoring();
+              await initializeMonitoringSystem();
+              
+              if (globalThis.AMP_License.hasFeature('nativeMessaging')) {
+                initializeNativeMessaging();
+              }
+            }
+            sendResponse(result);
+          } else {
+            sendResponse({ success: false, error: 'License module not loaded' });
+          }
+        } catch (error) {
+          logError('Error activating license:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+        
+      case 'deactivateLicense':
+        try {
+          if (globalThis.AMP_License) {
+            const result = await globalThis.AMP_License.deactivate();
+            // Stop features
+            stopAllIntervals();
+            sendResponse(result);
+          } else {
+            sendResponse({ success: false, error: 'License module not loaded' });
+          }
+        } catch (error) {
+          logError('Error deactivating license:', error);
+          sendResponse({ success: false, error: error.message });
+        }
+        break;
+        
+      case 'checkLicenseFeature':
+        try {
+          if (globalThis.AMP_License) {
+            const hasFeature = globalThis.AMP_License.hasFeature(message.feature);
+            sendResponse({ success: true, hasFeature });
+          } else {
+            sendResponse({ success: false, hasFeature: false });
+          }
+        } catch (error) {
+          sendResponse({ success: false, hasFeature: false, error: error.message });
         }
         break;
 
@@ -1151,14 +1448,14 @@ async function handleMessage(message, sender, sendResponse) {
         }
     }
   } catch (error) {
-    console.error('Message handling error:', error);
+    logError('Message handling error:', error);
     sendResponse({ success: false, error: error.message });
   }
 }
 
 async function handleStoreMemory(message, sender) {
   try {
-    console.log('AMP Background: handleStoreMemory called with:', { content: message.content?.substring(0, 100) + '...', provider: message.provider, messageType: message.messageType });
+    log('AMP Background: handleStoreMemory called with:', { content: message.content?.substring(0, 100) + '...', provider: message.provider, messageType: message.messageType });
     markActivity(); // Mark real-time activity
     setRingState('processing'); // Trigger processing animation
     
@@ -1182,7 +1479,7 @@ async function handleStoreMemory(message, sender) {
     });
     
     if (chunk) {
-      console.log(`✅ AMP Background: REAL DATA stored and persisted - ${messageType} (${content.length} chars):`, chunk.id);
+      log(`✅ AMP Background: REAL DATA stored and persisted - ${messageType} (${content.length} chars):`, chunk.id);
       
       // Mark data processing for indicators
       markDataProcessing(content.length);
@@ -1203,11 +1500,11 @@ async function handleStoreMemory(message, sender) {
       }
       
     } else {
-      console.error('AMP Background: ❌ Failed to store memory chunk');
+      logError('AMP Background: ❌ Failed to store memory chunk');
     }
     
   } catch (error) {
-    console.error('AMP Background: ❌ Critical error in handleStoreMemory:', error);
+    logError('AMP Background: ❌ Critical error in handleStoreMemory:', error);
     
     // Attempt recovery if this is a storage error
     if (activeMemoryPool.attemptRecovery) {
@@ -1344,7 +1641,7 @@ async function handleContextInjectionRequest(message, sender, sendResponse) {
   try {
     const { provider, tabId, conversationId } = message;
     
-    console.log(`🔄 AMP Background: Context injection requested for ${provider} (${conversationId})`);
+    log(`🔄 AMP Background: Context injection requested for ${provider} (${conversationId})`);
     
     // Track injection request
     if (ampAnalytics && typeof ampAnalytics.trackEvent === 'function') {
@@ -1364,8 +1661,8 @@ async function handleContextInjectionRequest(message, sender, sendResponse) {
     );
     
     if (context && context.length > 100) {
-      // Show approval popup to user
-      const approved = await showContextInjectionPopup(context, provider);
+      // Show approval popup to user via content script
+      const approved = await showContextInjectionPopup(context, provider, sender.tab.id);
       
       if (approved) {
         // Send context to content script for injection
@@ -1389,19 +1686,19 @@ async function handleContextInjectionRequest(message, sender, sendResponse) {
           }
         }
         
-        console.log(`✅ AMP Background: Context injection approved and sent (${context.length} chars)`);
+        log(`✅ AMP Background: Context injection approved and sent (${context.length} chars)`);
         sendResponse({ approved: true, contextLength: context.length });
       } else {
-        console.log('❌ AMP Background: Context injection denied by user');
+        log('❌ AMP Background: Context injection denied by user');
         sendResponse({ approved: false });
       }
     } else {
-      console.log('❌ AMP Background: No relevant context found for injection');
+      log('❌ AMP Background: No relevant context found for injection');
       sendResponse({ approved: false, error: 'No context available' });
     }
     
   } catch (error) {
-    console.error('❌ AMP Background: Error handling context injection request:', error);
+    logError('❌ AMP Background: Error handling context injection request:', error);
     sendResponse({ approved: false, error: error.message });
   }
 }
@@ -1444,63 +1741,27 @@ async function calculateInjectionAmount(provider, conversationId) {
   };
 }
 
-// Show context injection approval popup
-async function showContextInjectionPopup(context, provider) {
+// Show context injection approval popup via content script
+// NOTE: Service Workers cannot access DOM, so we must delegate to content script
+async function showContextInjectionPopup(context, provider, tabId) {
   return new Promise((resolve) => {
-    // Create popup for user approval
-    const popup = document.createElement('div');
-    popup.style.cssText = `
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: white;
-      border: 2px solid #007bff;
-      border-radius: 8px;
-      padding: 20px;
-      max-width: 500px;
-      max-height: 400px;
-      overflow-y: auto;
-      z-index: 10000;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-      font-family: Arial, sans-serif;
-    `;
-    
-    popup.innerHTML = `
-      <h3 style="margin: 0 0 15px 0; color: #007bff;">🔄 AMP Context Injection</h3>
-      <p style="margin: 0 0 10px 0; font-size: 14px;">
-        <strong>${provider}</strong> appears to have lost context. 
-        Should AMP inject previous conversation context?
-      </p>
-      <div style="background: #f8f9fa; padding: 10px; border-radius: 4px; margin: 10px 0; font-size: 12px; max-height: 150px; overflow-y: auto;">
-        <strong>Context Preview:</strong><br>
-        ${context.substring(0, 300)}${context.length > 300 ? '...' : ''}
-      </div>
-      <div style="text-align: right; margin-top: 15px;">
-        <button id="amp-inject-deny" style="margin-right: 10px; padding: 8px 16px; border: 1px solid #ccc; background: #f8f9fa; border-radius: 4px; cursor: pointer;">Deny</button>
-        <button id="amp-inject-approve" style="padding: 8px 16px; border: none; background: #007bff; color: white; border-radius: 4px; cursor: pointer;">Inject Context</button>
-      </div>
-    `;
-    
-    document.body.appendChild(popup);
-    
-    // Handle button clicks
-    popup.querySelector('#amp-inject-approve').onclick = () => {
-      document.body.removeChild(popup);
-      resolve(true);
-    };
-    
-    popup.querySelector('#amp-inject-deny').onclick = () => {
-      document.body.removeChild(popup);
-      resolve(false);
-    };
-    
-    // Auto-close after 30 seconds
-    setTimeout(() => {
-      if (document.body.contains(popup)) {
-        document.body.removeChild(popup);
+    // Send message to content script to show the popup
+    chrome.tabs.sendMessage(tabId, {
+      action: 'showInjectionApproval',
+      context: context.substring(0, 500), // Limit preview size
+      provider: provider
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        logError('Failed to show injection popup:', chrome.runtime.lastError.message);
         resolve(false);
+        return;
       }
+      resolve(response && response.approved);
+    });
+    
+    // Timeout after 30 seconds
+    setTimeout(() => {
+      resolve(false);
     }, 30000);
   });
 }
@@ -1526,7 +1787,7 @@ function queueForDesktopRetry(chunk, fatAddress, thinTag) {
 async function processDesktopRetryQueue() {
   if (desktopRetryQueue.length === 0 || !desktopConnected) return;
   
-  console.log(`🔄 AMP Background: Processing ${desktopRetryQueue.length} queued items for desktop`);
+  log(`🔄 AMP Background: Processing ${desktopRetryQueue.length} queued items for desktop`);
   
   const itemsToProcess = [...desktopRetryQueue];
   desktopRetryQueue.length = 0;
@@ -1604,7 +1865,7 @@ async function updateAMPSettings(settings) {
       }
     }
     
-    console.log('✅ AMP Settings updated successfully');
+    log('✅ AMP Settings updated successfully');
     if (ampAnalytics && typeof ampAnalytics.trackEvent === 'function') {
       try {
         ampAnalytics.trackEvent('settings_updated', settings);
@@ -1613,7 +1874,7 @@ async function updateAMPSettings(settings) {
       }
     }
   } catch (error) {
-    console.error('❌ Failed to update AMP settings:', error);
+    logError('❌ Failed to update AMP settings:', error);
     throw error;
   }
 }
@@ -1673,7 +1934,7 @@ async function handleGetMemoryStats() {
     };
 
     try {
-      console.log('🔧 Background: Querying cold storage stats from native host...');
+      log('🔧 Background: Querying cold storage stats from native host...');
       const coldResponse = await sendNativeMessage({ type: 'getMemoryStats' });
       if (coldResponse && coldResponse.success && coldResponse.stats) {
         coldStats = {
@@ -1682,7 +1943,7 @@ async function handleGetMemoryStats() {
           coldOverflowCount: coldResponse.stats.overflowCount || 0,
           coldAllMemoryCount: coldResponse.stats.allMemoryCount || 0
         };
-        console.log('🔧 Background: Received cold storage stats:', coldStats);
+        log('🔧 Background: Received cold storage stats:', coldStats);
       } else {
         console.warn('🔧 Background: No cold storage stats received');
       }
@@ -1712,14 +1973,14 @@ async function handleGetMemoryStats() {
       dataFlowWorking: true
     };
 
-    console.log(`🔧 Background: Merged stats - Hot: ${hotStats.totalChunks}, Cold: ${coldStats.coldTotalChunks}, Total: ${mergedStats.totalChunks}`);
+    log(`🔧 Background: Merged stats - Hot: ${hotStats.totalChunks}, Cold: ${coldStats.coldTotalChunks}, Total: ${mergedStats.totalChunks}`);
 
     // Update the stats manager with merged data
     statsManager.updateStats(mergedStats);
 
     return mergedStats;
   } catch (error) {
-    console.error('AMP Background: Error getting memory stats:', error);
+    logError('AMP Background: Error getting memory stats:', error);
     return {
       totalChunks: 0,
       domChunks: 0,
@@ -1777,20 +2038,20 @@ async function handleClearMemory() {
     activeMemoryPool.topicIndex.clear();
     activeMemoryPool.overflowQueue = [];
     updateStats();
-    console.log('All memory cleared');
+    log('All memory cleared');
 }
 
 // Send all memory to desktop app
 async function handleSendAllToGUI() {
   try {
-    console.log('🔄 Sending all memory to desktop app...');
+    log('🔄 Sending all memory to desktop app...');
     
     // Get all memory chunks from the pool
     const allChunks = activeMemoryPool.getAllChunks();
-    console.log(`📦 Found ${allChunks.length} chunks to send`);
+    log(`📦 Found ${allChunks.length} chunks to send`);
     
     if (allChunks.length === 0) {
-      console.log('📭 No memory chunks to send');
+      log('📭 No memory chunks to send');
       return;
     }
     
@@ -1804,31 +2065,31 @@ async function handleSendAllToGUI() {
     });
     
     if (response && response.success) {
-      console.log(`✅ Successfully sent ${response.storedCount}/${response.totalCount} chunks to desktop app`);
+      log(`✅ Successfully sent ${response.storedCount}/${response.totalCount} chunks to desktop app`);
     } else {
       console.warn('⚠️ Failed to send memory to desktop app:', response);
     }
   } catch (error) {
-    console.error('❌ Error sending memory to desktop app:', error);
+    logError('❌ Error sending memory to desktop app:', error);
   }
 }
 
 // Handle overflow data from memory pool
 async function handleSendToDesktop(message) {
   try {
-    console.log('🔄 Sending message to desktop app...');
+    log('🔄 Sending message to desktop app...');
     
     const response = await sendToDesktopApp(message);
     
     if (response && response.success) {
-      console.log('✅ Message sent to desktop app successfully');
+      log('✅ Message sent to desktop app successfully');
     } else {
       console.warn('⚠️ Failed to send message to desktop app:', response);
     }
     
     return response;
   } catch (error) {
-    console.error('❌ Error sending message to desktop app:', error);
+    logError('❌ Error sending message to desktop app:', error);
     throw error;
   }
 }
@@ -1918,7 +2179,7 @@ function updateStats() {
     updateConnectionStatus(desktopConnected);
     
   } catch (error) {
-    console.error('Failed to update stats:', error);
+    logError('Failed to update stats:', error);
     // Set basic stats if update fails
     const errorStats = {
       totalChunks: 0,
@@ -1955,14 +2216,14 @@ async function broadcastMemoryUpdate(memoryChunk, excludeTabId) {
       });
     } catch (error) {
       // Tab might be closed or inactive
-      console.log(`Failed to send memory update to tab ${tabId}`);
+      log(`Failed to send memory update to tab ${tabId}`);
     }
   }
 }
 
 async function flushTabMemory(tabId) {
   try {
-    console.log(`AMP Background: Flushing memory for tab ${tabId}`);
+    log(`AMP Background: Flushing memory for tab ${tabId}`);
     
     // Get all hot memory for this tab
     const tabMemory = Array.from(activeMemoryPool.hotPool.values()).filter(chunk => chunk.tab_id === tabId.toString());
@@ -1974,11 +2235,11 @@ async function flushTabMemory(tabId) {
       
       if (ampOnline) {
         await sendToAmpApp(tabMemory);
-        console.log(`Sent ${tabMemory.length} chunks to AMP app`);
+        log(`Sent ${tabMemory.length} chunks to AMP app`);
         }
       } catch (error) {
         // Silently handle AMP app connection issues - extension works independently
-        console.log('AMP app integration skipped (extension mode)');
+        log('AMP app integration skipped (extension mode)');
       }
       
       // Archive recent valuable memory to slot 9 before tab close
@@ -1992,7 +2253,7 @@ async function flushTabMemory(tabId) {
         if (chunk.slot < 9) {
           // This functionality is removed from memoryPool, so this block is effectively a no-op
           // For now, we'll just log that it would have been archived
-          console.log(`AMP Background: Would have archived chunk ${chunk.id} to slot 9`);
+          log(`AMP Background: Would have archived chunk ${chunk.id} to slot 9`);
         }
       }
     }
@@ -2000,9 +2261,9 @@ async function flushTabMemory(tabId) {
     // Always save crash safety backup
     // This functionality is removed from memoryPool, so this block is effectively a no-op
     // For now, we'll just log that it would have been saved
-    console.log(`AMP Background: Would have saved memory to storage`);
+    log(`AMP Background: Would have saved memory to storage`);
   } catch (error) {
-    console.error('Failed to flush tab memory:', error);
+    logError('Failed to flush tab memory:', error);
   }
 }
 
@@ -2015,25 +2276,21 @@ async function checkAmpAppStatus() {
   }
   
   try {
-    const response = await fetch('http://127.0.0.1:3000/status', {
-      method: 'GET',
-      mode: 'cors',
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json'
-      },
-      signal: AbortSignal.timeout(2000)
-    });
+    // Use native messaging instead of HTTP to check app status
+    if (nativePort && desktopConnected) {
+      ampAppStatus.online = true;
+      ampAppStatus.lastCheck = now;
+      return true;
+    }
     
-    ampAppStatus.online = response.ok;
-    ampAppStatus.lastCheck = now;
-    
-    return ampAppStatus.online;
-  } catch (error) {
-    // Silently handle CORS and network errors - AMP app is optional
     ampAppStatus.online = false;
     ampAppStatus.lastCheck = now;
-    console.log('AMP app not available (normal if not running locally)');
+    return false;
+  } catch (error) {
+    // Silently handle errors - AMP app is optional
+    ampAppStatus.online = false;
+    ampAppStatus.lastCheck = now;
+    log('AMP app not available (normal if not running locally)');
     return false;
   }
 }
@@ -2050,10 +2307,10 @@ function updateConnectionStatus(connected) {
     try {
       if (connected) {
         setRingState('normal'); // Green/connected state
-        console.log('🟢 AMP Background: Connected');
+        log('🟢 AMP Background: Connected');
       } else {
         setRingState('idle'); // Red/disconnected state
-        console.log('🔴 AMP Background: Disconnected');
+        log('🔴 AMP Background: Disconnected');
       }
     } catch (error) {
       console.warn('Failed to update ring state:', error);
@@ -2085,9 +2342,9 @@ function updateConnectionStatus(connected) {
       console.warn('Failed to broadcast connection status to tabs:', tabsError);
     }
     
-    console.log(`Connection status: ${connected ? 'Connected' : 'Disconnected'}`);
+    log(`Connection status: ${connected ? 'Connected' : 'Disconnected'}`);
   } catch (error) {
-    console.error('updateConnectionStatus failed:', error);
+    logError('updateConnectionStatus failed:', error);
   }
 }
 
@@ -2106,11 +2363,11 @@ function connectToNativeHost() {
   try {
     // Check if already connected
     if (nativePort) {
-      console.log('🔌 Already connected to native messaging host');
+      log('🔌 Already connected to native messaging host');
       return true;
     }
 
-    console.log('🔌 Connecting to native messaging host:', NATIVE_HOST_NAME);
+    log('🔌 Connecting to native messaging host:', NATIVE_HOST_NAME);
 
     // Check for any last error before attempting connection
     const lastError = chrome.runtime.lastError;
@@ -2122,17 +2379,17 @@ function connectToNativeHost() {
 
     // Handle successful connection
     nativePort.onMessage.addListener((message) => {
-      console.log('📨 Native message received:', message.type, message);
+      log('📨 Native message received:', message.type, message);
       try {
         handleNativeMessage(message);
       } catch (error) {
-        console.error('❌ Error handling native message:', error);
+        logError('❌ Error handling native message:', error);
       }
     });
 
     nativePort.onDisconnect.addListener(() => {
       const error = chrome.runtime.lastError;
-      console.error('❌ Native port disconnected:', error?.message || 'Unknown reason');
+      logError('❌ Native port disconnected:', error?.message || 'Unknown reason');
       nativePort = null;
       updateConnectionStatus(false);
 
@@ -2146,7 +2403,7 @@ function connectToNativeHost() {
       // Try to reconnect after 5 seconds
       setTimeout(() => {
         if (!nativePort) {
-          console.log('🔄 Attempting to reconnect to native host...');
+          log('🔄 Attempting to reconnect to native host...');
           connectToNativeHost();
         }
       }, 5000);
@@ -2154,7 +2411,7 @@ function connectToNativeHost() {
     
     // Send ping to verify connection
     sendNativeMessage({ type: 'ping' }).then(() => {
-      console.log('✅ Native messaging connection established');
+      log('✅ Native messaging connection established');
       updateConnectionStatus(true);
       
       // Flush queued messages
@@ -2163,13 +2420,13 @@ function connectToNativeHost() {
         sendNativeMessage(queuedMessage);
       }
     }).catch((error) => {
-      console.error('❌ Native ping failed:', error);
+      logError('❌ Native ping failed:', error);
       updateConnectionStatus(false);
     });
     
     return true;
   } catch (error) {
-    console.error('❌ Failed to connect to native host:', error);
+    logError('❌ Failed to connect to native host:', error);
     updateConnectionStatus(false);
     return false;
   }
@@ -2196,20 +2453,20 @@ function handleNativeMessage(message) {
       // Desktop is sending us updated stats
       if (message.stats) {
         statsManager.updateStats(message.stats);
-        console.log('📊 Stats updated from desktop:', message.stats);
+        log('📊 Stats updated from desktop:', message.stats);
       }
       break;
       
     case 'memory_stored':
-      console.log('💾 Memory stored confirmation:', message.chunkId);
+      log('💾 Memory stored confirmation:', message.chunkId);
       break;
       
     case 'error':
-      console.error('❌ Native host error:', message.error);
+      logError('❌ Native host error:', message.error);
       break;
       
     default:
-      console.log('📨 Unhandled native message:', message.type);
+      log('📨 Unhandled native message:', message.type);
   }
 }
 
@@ -2218,7 +2475,7 @@ function sendNativeMessage(message) {
   return new Promise((resolve, reject) => {
     if (!nativePort) {
       // Queue message and try to connect
-      console.log('⏳ Native port not connected, queueing message:', message.type);
+      log('⏳ Native port not connected, queueing message:', message.type);
       nativeMessageQueue.push(message);
       connectToNativeHost();
       reject(new Error('Native port not connected'));
@@ -2239,7 +2496,7 @@ function sendNativeMessage(message) {
     
     try {
       nativePort.postMessage(messageWithId);
-      console.log('📤 Native message sent:', message.type);
+      log('📤 Native message sent:', message.type);
     } catch (error) {
       clearTimeout(timeout);
       pendingResponses.delete(requestId);
@@ -2251,13 +2508,13 @@ function sendNativeMessage(message) {
 // Send to desktop app via native messaging
 async function sendToDesktopApp(message) {
   try {
-    console.log('📤 Sending to desktop via native messaging:', message.type);
+    log('📤 Sending to desktop via native messaging:', message.type);
     const response = await sendNativeMessage(message);
-    console.log('📨 Desktop response:', response);
+    log('📨 Desktop response:', response);
     updateConnectionStatus(true);
     return response;
   } catch (error) {
-    console.error('❌ Native messaging failed:', error);
+    logError('❌ Native messaging failed:', error);
     updateConnectionStatus(false);
     return null;
   }
@@ -2266,7 +2523,7 @@ async function sendToDesktopApp(message) {
 // Test connection via native messaging
 async function testDesktopConnection() {
   try {
-    console.log('🔍 Testing native messaging connection...');
+    log('🔍 Testing native messaging connection...');
     
     if (!nativePort) {
       connectToNativeHost();
@@ -2278,7 +2535,7 @@ async function testDesktopConnection() {
     
     if (response && response.type === 'pong') {
       updateConnectionStatus(true);
-      console.log('✅ Native messaging connection successful');
+      log('✅ Native messaging connection successful');
       return true;
     } else {
       console.warn('⚠️ Unexpected response from native host:', response);
@@ -2286,7 +2543,7 @@ async function testDesktopConnection() {
       return false;
     }
   } catch (error) {
-    console.error('❌ Native messaging test failed:', error);
+    logError('❌ Native messaging test failed:', error);
     updateConnectionStatus(false);
     return false;
   }
@@ -2298,44 +2555,90 @@ async function getDesktopStatus() {
     const response = await sendNativeMessage({ type: 'status' });
     return response;
   } catch (error) {
-    console.error('Failed to get desktop status:', error);
+    logError('Failed to get desktop status:', error);
     return null;
   }
 }
 
 // Initialize native messaging on startup
 function initializeNativeMessaging() {
-  console.log('🚀 Initializing native messaging...');
+  log('🚀 Initializing native messaging...');
   connectToNativeHost();
 }
 
 // Initialize extension
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log('AMP Extension installed/updated');
-  await initializeMemoryPool();
-  startHealthMonitoring();
+  log('AMP Extension installed/updated');
   
-  // Initialize monitoring system
-  await initializeMonitoringSystem();
-  
-  // Initialize native messaging connection
-  setTimeout(() => {
-    initializeNativeMessaging();
-  }, 1000);
+  // Initialize license first
+  if (globalThis.AMP_License) {
+    const licenseState = await globalThis.AMP_License.initialize();
+    log('License state:', licenseState.isValid ? licenseState.plan : 'unlicensed');
+    
+    // Only initialize if licensed
+    if (licenseState.isValid) {
+      await initializeMemoryPool();
+      startHealthMonitoring();
+      await initializeMonitoringSystem();
+      
+      // Start periodic license checks
+      globalThis.AMP_License.startPeriodicCheck();
+      
+      // Initialize native messaging connection (only for complete package)
+      if (globalThis.AMP_License.hasFeature('nativeMessaging')) {
+        setTimeout(() => {
+          initializeNativeMessaging();
+        }, 1000);
+      }
+    } else {
+      log('Extension not licensed - features disabled');
+    }
+  } else {
+    // Fallback if license module not loaded
+    await initializeMemoryPool();
+    startHealthMonitoring();
+    await initializeMonitoringSystem();
+    setTimeout(() => {
+      initializeNativeMessaging();
+    }, 1000);
+  }
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  console.log('AMP Extension started');
-  await initializeMemoryPool();
-  startHealthMonitoring();
+  log('AMP Extension started');
   
-  // Initialize monitoring system
-  await initializeMonitoringSystem();
-  
-  // Test desktop app connection
-  setTimeout(() => {
-    testDesktopConnection();
-  }, 1000);
+  // Initialize license first
+  if (globalThis.AMP_License) {
+    const licenseState = await globalThis.AMP_License.initialize();
+    log('License state:', licenseState.isValid ? licenseState.plan : 'unlicensed');
+    
+    // Only initialize if licensed
+    if (licenseState.isValid) {
+      await initializeMemoryPool();
+      startHealthMonitoring();
+      await initializeMonitoringSystem();
+      
+      // Start periodic license checks
+      globalThis.AMP_License.startPeriodicCheck();
+      
+      // Test desktop app connection (only for complete package)
+      if (globalThis.AMP_License.hasFeature('nativeMessaging')) {
+        setTimeout(() => {
+          testDesktopConnection();
+        }, 1000);
+      }
+    } else {
+      log('Extension not licensed - features disabled');
+    }
+  } else {
+    // Fallback if license module not loaded
+    await initializeMemoryPool();
+    startHealthMonitoring();
+    await initializeMonitoringSystem();
+    setTimeout(() => {
+      testDesktopConnection();
+    }, 1000);
+  }
 });
 
 // Remove old native messaging - use HTTP instead
@@ -2355,29 +2658,26 @@ async function sendToAmpApp(memoryChunks) {
     });
     
     if (response && response.success) {
-      console.log(`✅ Sent ${memoryChunks.length} chunks to desktop app`);
+      log(`✅ Sent ${memoryChunks.length} chunks to desktop app`);
     } else {
       console.warn('⚠️ Desktop app response indicates failure');
     }
   } catch (error) {
-    console.error('Failed to send memory to desktop app:', error);
+    logError('Failed to send memory to desktop app:', error);
   }
 }
 
-// Check desktop app status
+// Check desktop app status via native messaging (not HTTP)
 async function checkDesktopStatus() {
   try {
-    const response = await fetch('http://127.0.0.1:3000/status');
-    
-    if (response.ok) {
-      const status = await response.json();
-      console.log('Desktop app status:', status);
-      return status.online || false;
+    // Use native messaging to check if desktop app is connected
+    if (nativePort && desktopConnected) {
+      const response = await sendNativeMessage({ type: 'ping' });
+      return response && response.type === 'pong';
     }
-    
     return false;
   } catch (error) {
-    console.log('Desktop app not available:', error.message);
+    log('Desktop app not available via native messaging:', error.message);
     return false;
   }
 }
@@ -2386,8 +2686,11 @@ function generateMessageId() {
   return `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-// Periodic maintenance - minimal overhead
-setInterval(async () => {
+// Periodic maintenance - reduced frequency for lower CPU usage
+const maintenanceInterval = setInterval(async () => {
+  // Skip if idle
+  if (isExtensionIdle) return;
+  
   try {
     // Check AMP app status
     await checkAmpAppStatus();
@@ -2398,13 +2701,15 @@ setInterval(async () => {
     }
     
     const stats = activeMemoryPool.getStats();
-    console.log(`AMP Background: Rolling state - DOM: ${stats.domChunks}, Hot: ${stats.hotBufferChunks}, Archive: ${stats.archivedChunks}`);
-    console.log(`Hot memory: ${(stats.hotMemorySize / 1024 / 1024).toFixed(2)}MB`);
-    console.log(`Overflow queue: ${stats.overflowQueueLength} items pending`);
+    // Reduced logging - only log every other time
+    if (Math.random() < 0.5) {
+      log(`AMP Background: Rolling state - DOM: ${stats.domChunks}, Hot: ${stats.hotBufferChunks}`);
+    }
   } catch (error) {
-    console.error('Periodic maintenance failed:', error);
+    logError('Periodic maintenance failed:', error);
   }
-}, 60000); // Every minute - lightweight maintenance
+}, PERF_CONFIG.MAINTENANCE_INTERVAL); // Every 2 minutes (reduced from 1 min)
+activeIntervalIds.push(maintenanceInterval);
 
 // Initialize monitoring system
 async function initializeMonitoringSystem() {
@@ -2418,19 +2723,19 @@ async function initializeMonitoringSystem() {
       // If the active tab is on an AI provider site, set it as the monitoring target
       if (provider !== 'unknown') {
         await switchMonitoringTarget(activeTab);
-        console.log(`🟢 AMP: Auto-initialized monitoring for ${provider} on ${activeTab.url}`);
+        log(`🟢 AMP: Auto-initialized monitoring for ${provider} on ${activeTab.url}`);
       } else {
-        console.log('AMP: No AI provider detected on active tab, monitoring disabled');
+        log('AMP: No AI provider detected on active tab, monitoring disabled');
       }
     }
   } catch (error) {
-    console.error('AMP: Failed to initialize monitoring system:', error);
+    logError('AMP: Failed to initialize monitoring system:', error);
   }
 }
 
 // Initialize on script load
 initializeMemoryPool().then(async () => {
-  console.log('AMP Background: Memory pool initialized successfully');
+  log('AMP Background: Memory pool initialized successfully');
   
   // Initialize monitoring system
   await initializeMonitoringSystem();
@@ -2440,7 +2745,7 @@ initializeMemoryPool().then(async () => {
     initializeNativeMessaging();
     testDesktopConnection().then(connected => {
       if (connected) {
-        console.log('AMP Background: Native messaging connection to desktop app successful');
+        log('AMP Background: Native messaging connection to desktop app successful');
         // Send current memory data to desktop app
         sendCurrentMemoryToDesktop();
       } else {
@@ -2449,8 +2754,11 @@ initializeMemoryPool().then(async () => {
     });
   }, 3000); // Wait 3 seconds before connecting to avoid race condition
   
-  // Start periodic stats broadcasting to connected clients
-  setInterval(() => {
+  // Start periodic stats broadcasting to connected clients (reduced frequency)
+  const broadcastInterval = setInterval(() => {
+    // Skip if idle
+    if (isExtensionIdle) return;
+    
     try {
       const stats = activeMemoryPool.getStats();
       // Broadcast stats to all connected clients (popup, desktop UI, etc.)
@@ -2461,11 +2769,12 @@ initializeMemoryPool().then(async () => {
         // Ignore errors when no clients are connected
       });
     } catch (error) {
-      console.warn('AMP Background: Failed to broadcast stats:', error);
+      // Silently ignore - no need to warn every time
     }
-  }, 10000); // Broadcast stats every 10 seconds
+  }, PERF_CONFIG.STATS_BROADCAST_INTERVAL); // Broadcast stats every 15 seconds (reduced from 10s)
+  activeIntervalIds.push(broadcastInterval);
 }).catch(error => {
-  console.error('AMP Background: Failed to initialize memory pool:', error);
+  logError('AMP Background: Failed to initialize memory pool:', error);
 });
 
 // Send current memory data to desktop app - REAL DATA ONLY, NO TEST DATA
@@ -2478,11 +2787,11 @@ async function sendCurrentMemoryToDesktop() {
     
     const allChunks = activeMemoryPool.getAll();
     if (allChunks.length === 0) {
-      console.log('AMP Background: No memory chunks to send - waiting for real data capture');
+      log('AMP Background: No memory chunks to send - waiting for real data capture');
       return; // Don't send anything if there's no real data
     }
     
-    console.log(`AMP Background: Sending ${allChunks.length} REAL memory chunks to desktop app`);
+    log(`AMP Background: Sending ${allChunks.length} REAL memory chunks to desktop app`);
     
     const response = await sendToDesktopApp({
       type: 'sendAllMemory',
@@ -2493,12 +2802,12 @@ async function sendCurrentMemoryToDesktop() {
     });
     
     if (response && response.success) {
-      console.log(`✅ Successfully sent ${allChunks.length} REAL chunks to desktop app`);
+      log(`✅ Successfully sent ${allChunks.length} REAL chunks to desktop app`);
     } else {
       console.warn('⚠️ Failed to send memory chunks to desktop app:', response);
     }
   } catch (error) {
-    console.error('❌ Error sending memory to desktop app:', error);
+    logError('❌ Error sending memory to desktop app:', error);
   }
 }
 
@@ -2507,14 +2816,20 @@ let healthCheckInterval = null;
 let memorySendInterval = null;
 
 function startHealthMonitoring() {
-  // Check system health every 30 seconds
+  // Check system health every 60 seconds (reduced from 30s for lower CPU usage)
   healthCheckInterval = setInterval(async () => {
+    // Skip non-critical checks if idle
+    if (isExtensionIdle) {
+      log('📊 Skipping health check - extension idle');
+      return;
+    }
+    
     try {
       if (activeMemoryPool && activeMemoryPool.getSystemHealth) {
         const health = activeMemoryPool.getSystemHealth();
         
         // Log health status
-        console.log('AMP Background: System health check:', {
+        log('AMP Background: System health check:', {
           hotPoolSize: health.hotPoolSize,
           errorCount: health.errorCount,
           isRecovering: health.isRecovering,
@@ -2555,20 +2870,25 @@ function startHealthMonitoring() {
         }
       }
     } catch (error) {
-      console.error('AMP Background: Health check failed:', error);
+      logError('AMP Background: Health check failed:', error);
     }
-  }, 30000); // 30 seconds
+  }, PERF_CONFIG.HEALTH_CHECK_INTERVAL); // 60 seconds (reduced from 30s)
+  activeIntervalIds.push(healthCheckInterval);
 
-  // Send memory data to desktop app every 3 seconds if connected
+  // Send memory data to desktop app every 10 seconds if connected (reduced from 3s)
   memorySendInterval = setInterval(async () => {
+    // Skip if idle
+    if (isExtensionIdle) return;
+    
     try {
       if (desktopConnected && activeMemoryPool) {
         await sendCurrentMemoryToDesktop();
       }
     } catch (error) {
-      console.error('AMP Background: Memory send failed:', error);
+      logError('AMP Background: Memory send failed:', error);
     }
-  }, 3000); // 3 seconds
+  }, PERF_CONFIG.MEMORY_SEND_INTERVAL); // 10 seconds (reduced from 3s)
+  activeIntervalIds.push(memorySendInterval);
 }
 
 function stopHealthMonitoring() {

@@ -24,7 +24,18 @@
   ],
   
   "host_permissions": [
-    "<all_urls>"
+    "https://chat.openai.com/*",
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://bard.google.com/*",
+    "https://perplexity.ai/*",
+    "https://www.perplexity.ai/*",
+    "https://poe.com/*",
+    "https://character.ai/*",
+    "https://you.com/*",
+    "https://blackbox.ai/*",
+    "https://www.blackbox.ai/*"
   ],
   
   "background": {
@@ -33,7 +44,20 @@
   
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://bard.google.com/*",
+        "https://perplexity.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://poe.com/*",
+        "https://character.ai/*",
+        "https://you.com/*",
+        "https://blackbox.ai/*",
+        "https://www.blackbox.ai/*"
+      ],
       "js": ["utils.js", "content.js"],
       "css": ["styles.css"],
       "run_at": "document_start"
@@ -48,8 +72,21 @@
   
   "web_accessible_resources": [
     {
-      "resources": ["receiver.js", "utils.js", "amp-ui.html", "animated logo/*"],
-      "matches": ["<all_urls>"]
+      "resources": ["utils.js", "amp-ui.html", "zipper-viewer.js", "animated logo/*"],
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://bard.google.com/*",
+        "https://perplexity.ai/*",
+        "https://www.perplexity.ai/*",
+        "https://poe.com/*",
+        "https://character.ai/*",
+        "https://you.com/*",
+        "https://blackbox.ai/*",
+        "https://www.blackbox.ai/*"
+      ]
     }
   ],
 

@@ -1,10 +1,143 @@
 // © 2025 AMPiQ - Extension GUI Renderer
 // Handles UI interactions and native messaging
+// Version: 4.0.0 - Production
+
+// Production logging - set to false to disable debug logs
+const AMP_DEBUG = false;
+const log = (...args) => AMP_DEBUG && console.log('[AMP Renderer]', ...args);
+const logError = (...args) => console.error('[AMP Renderer]', ...args);
 
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize the app
   initializeApp();
 });
+
+// ============================================
+// SKELETON LOADERS & TOAST NOTIFICATIONS
+// ============================================
+
+// Generate skeleton loader HTML for different components
+const SkeletonLoader = {
+  // Skeleton for stat cards on dashboard
+  card() {
+    return `
+      <div class="skeleton-card">
+        <div class="skeleton-header">
+          <div class="skeleton skeleton-title"></div>
+          <div class="skeleton skeleton-icon"></div>
+        </div>
+        <div class="skeleton skeleton-value"></div>
+        <div class="skeleton skeleton-label"></div>
+      </div>
+    `;
+  },
+
+  // Skeleton for activity feed entries
+  activityEntry() {
+    return `
+      <div class="skeleton-entry">
+        <div class="skeleton skeleton-avatar"></div>
+        <div class="skeleton-content">
+          <div class="skeleton skeleton-line" style="width: 80%"></div>
+          <div class="skeleton skeleton-line" style="width: 50%"></div>
+        </div>
+      </div>
+    `;
+  },
+
+  // Skeleton for conversation/memory entries
+  conversation() {
+    return `
+      <div class="skeleton-conversation">
+        <div class="skeleton-conv-header">
+          <div class="skeleton skeleton-provider"></div>
+          <div class="skeleton skeleton-time"></div>
+        </div>
+        <div class="skeleton skeleton-preview"></div>
+        <div class="skeleton skeleton-preview"></div>
+        <div class="skeleton skeleton-preview"></div>
+      </div>
+    `;
+  },
+
+  // Generate multiple skeletons
+  multiple(type, count) {
+    return Array(count).fill(null).map(() => this[type]()).join('');
+  }
+};
+
+// Toast notification system
+const Toast = {
+  container: null,
+
+  init() {
+    this.container = document.getElementById('toast-container');
+    if (!this.container) {
+      this.container = document.createElement('div');
+      this.container.id = 'toast-container';
+      this.container.className = 'toast-container';
+      document.body.appendChild(this.container);
+    }
+  },
+
+  show(message, type = 'info', duration = 4000) {
+    if (!this.container) this.init();
+
+    const icons = {
+      success: '✅',
+      error: '❌',
+      warning: '⚠️',
+      info: 'ℹ️'
+    };
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.innerHTML = `
+      <span class="toast-icon">${icons[type] || icons.info}</span>
+      <span class="toast-message">${message}</span>
+      <button class="toast-close" onclick="Toast.dismiss(this.parentElement)">×</button>
+    `;
+
+    this.container.appendChild(toast);
+
+    // Auto-dismiss after duration
+    if (duration > 0) {
+      setTimeout(() => this.dismiss(toast), duration);
+    }
+
+    return toast;
+  },
+
+  dismiss(toast) {
+    if (!toast || toast.classList.contains('hiding')) return;
+    
+    toast.classList.add('hiding');
+    setTimeout(() => {
+      if (toast.parentElement) {
+        toast.parentElement.removeChild(toast);
+      }
+    }, 300);
+  },
+
+  success(message, duration) {
+    return this.show(message, 'success', duration);
+  },
+
+  error(message, duration) {
+    return this.show(message, 'error', duration);
+  },
+
+  warning(message, duration) {
+    return this.show(message, 'warning', duration);
+  },
+
+  info(message, duration) {
+    return this.show(message, 'info', duration);
+  }
+};
+
+// Make Toast globally available
+window.Toast = Toast;
 
 class AMPiQRenderer {
   constructor() {
@@ -25,10 +158,10 @@ class AMPiQRenderer {
     // this.updateConnectionStatus(false);
     
     // Test if electronAPI is available
-    console.log('🔧 Renderer: Testing electronAPI availability...');
-    console.log('🔧 Renderer: window.electronAPI exists:', !!window.electronAPI);
+    log('🔧 Renderer: Testing electronAPI availability...');
+    log('🔧 Renderer: window.electronAPI exists:', !!window.electronAPI);
     if (window.electronAPI) {
-      console.log('🔧 Renderer: electronAPI methods:', Object.keys(window.electronAPI));
+      log('🔧 Renderer: electronAPI methods:', Object.keys(window.electronAPI));
     }
     
     this.connectToExtension();
@@ -249,7 +382,7 @@ class AMPiQRenderer {
               <span>Inject Selected</span>
             </button>
           </div>
-                    <div class="empty-state">Loading indexed conversations...</div>
+                    <div id="memory-content">${SkeletonLoader.multiple('conversation', 4)}</div>
         </div>
         <div class="frost-overlay" id="frost-overlay">
           <div class="frost-message">
@@ -306,7 +439,7 @@ class AMPiQRenderer {
   }
 
   setupPageEventListeners(pageName) {
-    console.log(`🔧 Setting up event listeners for page: ${pageName}`);
+    log(`🔧 Setting up event listeners for page: ${pageName}`);
     
     switch(pageName) {
       case 'search':
@@ -340,7 +473,7 @@ class AMPiQRenderer {
   }
 
   setupMemoryBrowserPage() {
-    console.log('🔧 Setting up memory browser page event listeners...');
+    log('🔧 Setting up memory browser page event listeners...');
     
     const searchInput = document.getElementById('memory-search');
     const searchButton = document.getElementById('search-button');
@@ -389,10 +522,10 @@ class AMPiQRenderer {
     }
 
     // Load memory data automatically when page is set up
-    console.log('🔧 Loading memory data for live browser...');
+    log('🔧 Loading memory data for live browser...');
     this.loadMemoryData();
 
-    console.log('✅ Memory browser page setup complete');
+    log('✅ Memory browser page setup complete');
   }
 
   performMemorySearch() {
@@ -578,7 +711,7 @@ class AMPiQRenderer {
           resultsDiv.innerHTML = '<div class="no-results">No results found for "' + query + '"</div>';
         }
       }).catch(error => {
-        console.error('Search failed:', error);
+        logError('Search failed:', error);
         resultsDiv.innerHTML = '<div class="error">Search failed: ' + error.message + '</div>';
       });
     } else {
@@ -656,11 +789,11 @@ class AMPiQRenderer {
     // Use IPC communication instead of direct HTTP requests
     if (window.electronAPI && window.electronAPI.sendNativeMessage) {
       window.electronAPI.sendNativeMessage(message).catch(error => {
-        console.error('IPC request failed:', error);
+        logError('IPC request failed:', error);
         this.addActivityEntry('❌ IPC request failed');
       });
     } else {
-      console.error('No IPC connection available');
+      logError('No IPC connection available');
       this.addActivityEntry('❌ Cannot send message - no IPC connection available');
     }
   }
@@ -776,7 +909,7 @@ class AMPiQRenderer {
           document.getElementById('rotation-interval').value = settings.security.rotationInterval;
         }
       } catch (error) {
-        console.error('Failed to load settings:', error);
+        logError('Failed to load settings:', error);
       }
     }
   }
@@ -796,76 +929,141 @@ class AMPiQRenderer {
   // Memory Browser Methods
 
   frostViewer() {
-    console.log('❄️ frostViewer() called');
+    log('❄️ frostViewer() called');
     const frostOverlay = document.getElementById('frost-overlay');
-    console.log('Frost overlay element:', frostOverlay);
+    log('Frost overlay element:', frostOverlay);
     
     if (frostOverlay) {
       frostOverlay.classList.add('active');
-      console.log('✅ Frost overlay activated');
+      log('✅ Frost overlay activated');
       this.addActivityEntry('❄️ Memory viewer frosted for privacy');
     } else {
-      console.error('❌ Frost overlay element not found!');
+      logError('❌ Frost overlay element not found!');
       this.addActivityEntry('❌ Could not frost viewer - overlay not found');
     }
   }
 
   unfrostViewer() {
-    console.log('🔓 unfrostViewer() called');
+    log('🔓 unfrostViewer() called');
     const frostOverlay = document.getElementById('frost-overlay');
-    console.log('Frost overlay element:', frostOverlay);
+    log('Frost overlay element:', frostOverlay);
     
     if (frostOverlay) {
       frostOverlay.classList.remove('active');
-      console.log('✅ Frost overlay deactivated');
+      log('✅ Frost overlay deactivated');
       this.addActivityEntry('🔓 Memory viewer unfrosted');
     } else {
-      console.error('❌ Frost overlay element not found!');
+      logError('❌ Frost overlay element not found!');
       this.addActivityEntry('❌ Could not unfrost viewer - overlay not found');
     }
   }
 
   async loadMemoryData() {
+    const memoryViewer = document.getElementById('memory-viewer');
+    const memoryContent = document.getElementById('memory-content');
+    const refreshBtn = document.getElementById('refresh-memory');
+    
+    // Show skeleton loaders while loading
+    if (memoryContent) {
+      memoryContent.innerHTML = SkeletonLoader.multiple('conversation', 4);
+    }
+    
+    // Add loading state to refresh button
+    if (refreshBtn) {
+      refreshBtn.classList.add('loading');
+    }
+    
     // Get memory data directly from main process via IPC
     if (window.electronAPI && window.electronAPI.getMemoryData) {
-      console.log('📡 Requesting memory data from main process...');
+      log('📡 Requesting memory data from main process...');
       try {
         const memoryData = await window.electronAPI.getMemoryData();
-        console.log(`📊 Received ${memoryData.length} memory chunks from main process`);
+        log(`📊 Received ${memoryData.length} memory chunks from main process`);
         this.displayMemoryData(memoryData);
         
         // Store the data for live updates
         this.currentMemoryData = memoryData;
+        
+        // Show success toast
+        if (memoryData.length > 0) {
+          Toast.success(`Loaded ${memoryData.length} memory entries`);
+        }
       } catch (error) {
-        console.error('❌ Failed to get memory data:', error);
+        logError('❌ Failed to get memory data:', error);
         this.addActivityEntry('❌ Failed to load memory data');
+        Toast.error('Failed to load memory data');
+        
+        // Show empty state on error
+        if (memoryContent) {
+          memoryContent.innerHTML = `
+            <div class="empty-state">
+              <div style="text-align: center; padding: 40px;">
+                <div style="font-size: 48px; margin-bottom: 20px;">⚠️</div>
+                <div style="font-size: 18px; margin-bottom: 10px;">Failed to load data</div>
+                <div style="font-size: 14px; color: rgba(255, 255, 255, 0.6);">Check connection and try again</div>
+              </div>
+            </div>
+          `;
+        }
       }
     } else {
-      console.log('⚠️ IPC connection not available, cannot load real data');
+      log('⚠️ IPC connection not available, cannot load real data');
       this.addActivityEntry('⚠️ IPC connection not available');
+      Toast.warning('IPC connection not available');
+      
+      // Show empty state
+      if (memoryContent) {
+        memoryContent.innerHTML = `
+          <div class="empty-state">
+            <div style="text-align: center; padding: 40px;">
+              <div style="font-size: 48px; margin-bottom: 20px;">🔌</div>
+              <div style="font-size: 18px; margin-bottom: 10px;">Not Connected</div>
+              <div style="font-size: 14px; color: rgba(255, 255, 255, 0.6);">Waiting for extension connection...</div>
+            </div>
+          </div>
+        `;
+      }
+    }
+    
+    // Remove loading state from refresh button
+    if (refreshBtn) {
+      refreshBtn.classList.remove('loading');
     }
   }
 
   displayMemoryData(memoryData) {
     const memoryViewer = document.getElementById('memory-viewer');
-    if (!memoryViewer) return;
+    const memoryContent = document.getElementById('memory-content');
+    const targetElement = memoryContent || memoryViewer;
+    
+    if (!targetElement) return;
 
-    console.log(`📊 Displaying memory index: ${memoryData ? memoryData.length : 0} entries`);
+    log(`📊 Displaying memory index: ${memoryData ? memoryData.length : 0} entries`);
 
     if (!memoryData || memoryData.length === 0) {
-      console.log('⚠️ No memory data to display');
-      memoryViewer.innerHTML = '<div class="empty-state">No indexed conversations found</div>';
+      log('⚠️ No memory data to display');
+      targetElement.innerHTML = `
+        <div class="empty-state">
+          <div style="text-align: center; padding: 40px;">
+            <div style="font-size: 48px; margin-bottom: 20px;">📭</div>
+            <div style="font-size: 18px; margin-bottom: 10px;">No Conversations Yet</div>
+            <div style="font-size: 14px; color: rgba(255, 255, 255, 0.6);">
+              Start chatting with AI providers to capture memories
+            </div>
+          </div>
+        </div>
+      `;
       return;
     }
 
     // Create simple scrollable memory index
     const html = memoryData.map(chunk => this.createMemoryIndexEntry(chunk)).join('');
-    memoryViewer.innerHTML = html;
+    targetElement.innerHTML = html;
 
     // Setup action buttons
     this.setupMemoryIndexActions();
     
-    console.log(`✅ Successfully displayed ${memoryData.length} memory index entries`);
+    log(`✅ Successfully displayed ${memoryData.length} memory index entries`);
   }
 
   createMemoryEntryHTML(entry) {
@@ -1292,11 +1490,11 @@ class AMPiQRenderer {
     this.addActivityEntry('🔄 Waiting for Chrome extension native messaging connection...');
 
     // Event listener is now set up in initializeApp() to avoid race conditions
-    console.log('🔧 Renderer: connectToExtension called - events handled by global listener');
+    log('🔧 Renderer: connectToExtension called - events handled by global listener');
   }
 
   handleNativeMessage(message) {
-    console.log('🔧 Handling native message:', message.type, message);
+    log('🔧 Handling native message:', message.type, message);
 
     switch(message.type) {
       case 'pong':
@@ -1345,7 +1543,7 @@ class AMPiQRenderer {
       case 'getMemoryStats':
         // Handle memory stats response from native host
         if (message.success && message.stats) {
-          console.log('🔧 REAL Memory stats received:', message.stats);
+          log('🔧 REAL Memory stats received:', message.stats);
           this.updateMemoryStats(message.stats);
           
           // Show REAL numbers in activity feed
@@ -1400,7 +1598,7 @@ class AMPiQRenderer {
       default:
         // Only log unknown messages if they seem important
         if (message.type && !message.type.includes('status')) {
-          console.log('📨 Unhandled message type:', message.type, message);
+          log('📨 Unhandled message type:', message.type, message);
           this.addActivityEntry(`📨 Received: ${message.type}`);
         }
     }
@@ -1423,7 +1621,7 @@ class AMPiQRenderer {
     
     // Update the internal connection state
     this.isConnected = connected;
-    console.log(`🔗 Connection status updated: ${connected ? 'Connected' : 'Disconnected'}`);
+    log(`🔗 Connection status updated: ${connected ? 'Connected' : 'Disconnected'}`);
     
     // Add activity entry for connection changes
     if (connected && !this.wasConnected) {
@@ -1437,7 +1635,7 @@ class AMPiQRenderer {
 
   updateMemoryStats(stats) {
     try {
-      console.log('🔧 Updating UI with REAL stats:', stats);
+      log('🔧 Updating UI with REAL stats:', stats);
       
       // Update stats based on current page
       const elements = {};
@@ -1461,7 +1659,7 @@ class AMPiQRenderer {
           } else {
             element.textContent = value;
           }
-          console.log(`🔧 Updated ${id}: ${value}`);
+          log(`🔧 Updated ${id}: ${value}`);
         }
       });
 
@@ -1486,7 +1684,7 @@ class AMPiQRenderer {
       }
       
     } catch (error) {
-      console.error('Failed to update memory stats:', error);
+      logError('Failed to update memory stats:', error);
     }
   }
 
@@ -1518,7 +1716,7 @@ class AMPiQRenderer {
     this.activityLog.unshift({ time, message });
     
     // Log to console for debugging
-    console.log(`[${time}] ${message}`);
+    log(`[${time}] ${message}`);
   }
 
   startPeriodicUpdates() {
@@ -1548,14 +1746,14 @@ function initializeApp() {
   // Listen for memory stats and errors from Electron main process
   if (window.electronAPI && window.electronAPI.onMemoryUpdate) {
     window.electronAPI.onMemoryUpdate((event, data) => {
-      console.log('🔧 Renderer: Received memory update from main process:', data);
-      console.log('🔧 Renderer: Data type:', typeof data);
-      console.log('🔧 Renderer: Has stats?', !!data.stats);
-      console.log('🔧 Renderer: Stats content:', data.stats);
+      log('🔧 Renderer: Received memory update from main process:', data);
+      log('🔧 Renderer: Data type:', typeof data);
+      log('🔧 Renderer: Has stats?', !!data.stats);
+      log('🔧 Renderer: Stats content:', data.stats);
       
       if (data && data.error) {
         // Show error in UI and log
-        console.error(data.error);
+        logError(data.error);
         if (window.ampiqApp && typeof window.ampiqApp.addActivityEntry === 'function') {
           window.ampiqApp.addActivityEntry('❌ ' + data.error);
         }
@@ -1564,7 +1762,7 @@ function initializeApp() {
       
       // Update connection status if provided
       if (data && typeof data.connected === 'boolean') {
-        console.log('🔧 Renderer: Updating connection status to:', data.connected);
+        log('🔧 Renderer: Updating connection status to:', data.connected);
         if (window.ampiqApp && typeof window.ampiqApp.updateConnectionStatus === 'function') {
           window.ampiqApp.updateConnectionStatus(data.connected);
         }

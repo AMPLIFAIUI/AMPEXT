@@ -1,6 +1,11 @@
 // © 2025 AMPIQ All rights reserved.
 // Popup script for AMP Memory Extension - Professional UI
-// Version: 2.0.1 - Cache busted
+// Version: 4.0.0 - Production
+
+// Production logging - set to false to disable debug logs
+const AMP_DEBUG = false;
+const log = (...args) => AMP_DEBUG && console.log('[AMP UI]', ...args);
+const logError = (...args) => console.error('[AMP UI]', ...args);
 
 let activityFeedHeight = 150;
 let updateInterval;
@@ -12,6 +17,15 @@ let lastProvider = 'Unknown';
 let providerUpdateDebounce = 10000; // 10 seconds
 
 document.addEventListener('DOMContentLoaded', async () => {
+    // Check license status first
+    const licenseState = await checkLicenseStatus();
+    
+    if (!licenseState.isValid) {
+        // Show activation prompt
+        showActivationPrompt();
+        return;
+    }
+    
     await initializePopup();
     setupEventListeners();
     setupPinning();
@@ -24,15 +38,142 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Initialize monitoring status
     await updateMonitoringStatus();
     
+    // Update license status display
+    updateLicenseStatusDisplay(licenseState);
+    
     // Listen for connection status updates from background
     if (chrome && chrome.runtime && chrome.runtime.onMessage) {
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (message.type === 'connectionStatusUpdate') {
                 updateConnectionIndicator(message.connected);
             }
+            if (message.type === 'LICENSE_STATE_CHANGED') {
+                updateLicenseStatusDisplay(message.state);
+            }
         });
     }
 });
+
+// Check license status
+async function checkLicenseStatus() {
+    try {
+        const response = await chrome.runtime.sendMessage({ action: 'getLicenseState' });
+        return response || { isValid: false };
+    } catch (error) {
+        logError('Failed to check license:', error);
+        return { isValid: false };
+    }
+}
+
+// Show activation prompt for unlicensed users
+function showActivationPrompt() {
+    document.body.innerHTML = `
+        <div style="
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            padding: 30px;
+            text-align: center;
+            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
+            color: #fff;
+        ">
+            <svg width="80" height="80" viewBox="0 0 32 32" style="margin-bottom: 20px;">
+                <rect x="7.31" y="-15.13" width="30.63" height="30.63" rx="15.32" fill="#030303" transform="rotate(44.53)"/>
+                <path fill-rule="evenodd" clip-rule="evenodd" d="m 14.617,17.437 c 0.431,0.017 0.869,0.037 1.314,0.057 l 0.481,0.022 c 0.341,0.016 0.686,0.032 1.033,0.046 l 0.142,0.006 c 4.484,0.173 9.453,0.025 13.206,-3.775 l -2.128,-2.102 c -0.757,0.766 -1.58,1.34 -2.468,1.767 L 18.415,5.771 C 18.831,4.879 19.395,4.048 20.151,3.282 L 18.023,1.18 C 14.27,4.98 14.184,9.951 14.413,14.432 9.929,14.259 4.96,14.407 1.206,18.208 l 2.129,2.102 c 0.756,-0.766 1.58,-1.34 2.467,-1.767 l 7.783,7.686 c -0.416,0.893 -0.98,1.723 -1.737,2.49 l 2.129,2.102 c 2.93,-2.968 3.625,-6.649 3.68,-10.253 -0.438,-0.017 -0.861,-0.037 -1.266,-0.056 l -0.599,-0.028 c -0.39,-0.018 -0.768,-0.034 -1.132,-0.048 -0.01,0.864 -0.056,1.695 -0.161,2.492 L 9.093,17.588 C 10.771,17.345 12.606,17.359 14.582,17.436 Z m 2.884,-8.363 5.406,5.339 c -1.678,0.242 -3.513,0.228 -5.489,0.152 -0.101,-1.975 -0.138,-3.81 0.083,-5.491 z" fill="#3498db"/>
+            </svg>
+            <h2 style="margin-bottom: 10px; color: #3498db;">AMP - Auto Memory Persistence</h2>
+            <p style="margin-bottom: 25px; color: #bdc3c7; line-height: 1.5;">
+                Please activate your license to use AMP.
+            </p>
+            <input type="text" id="licenseKeyInput" placeholder="Enter your license key" style="
+                width: 100%;
+                max-width: 300px;
+                padding: 12px 15px;
+                border: 2px solid #3498db;
+                border-radius: 8px;
+                background: rgba(255,255,255,0.1);
+                color: #fff;
+                font-size: 14px;
+                text-align: center;
+                margin-bottom: 15px;
+            "/>
+            <button id="activateBtn" style="
+                background: linear-gradient(135deg, #3498db, #2980b9);
+                color: white;
+                border: none;
+                padding: 12px 30px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 600;
+                cursor: pointer;
+                margin-bottom: 20px;
+                transition: transform 0.2s, box-shadow 0.2s;
+            ">Activate License</button>
+            <p id="activationError" style="color: #e74c3c; display: none; margin-bottom: 15px;"></p>
+            <a href="https://amp.infinityfreeapp.com/#pricing" target="_blank" style="
+                color: #3498db;
+                text-decoration: none;
+                font-size: 13px;
+            ">Don't have a license? Get one here →</a>
+        </div>
+    `;
+    
+    const activateBtn = document.getElementById('activateBtn');
+    const licenseInput = document.getElementById('licenseKeyInput');
+    const errorEl = document.getElementById('activationError');
+    
+    activateBtn.addEventListener('click', async () => {
+        const key = licenseInput.value.trim();
+        if (!key) {
+            errorEl.textContent = 'Please enter a license key';
+            errorEl.style.display = 'block';
+            return;
+        }
+        
+        activateBtn.textContent = 'Activating...';
+        activateBtn.disabled = true;
+        
+        try {
+            const response = await chrome.runtime.sendMessage({
+                action: 'activateLicense',
+                licenseKey: key
+            });
+            
+            if (response.success) {
+                // Reload the popup to show the full UI
+                window.location.reload();
+            } else {
+                errorEl.textContent = response.error || 'Invalid license key';
+                errorEl.style.display = 'block';
+                activateBtn.textContent = 'Activate License';
+                activateBtn.disabled = false;
+            }
+        } catch (error) {
+            errorEl.textContent = 'Activation failed. Please try again.';
+            errorEl.style.display = 'block';
+            activateBtn.textContent = 'Activate License';
+            activateBtn.disabled = false;
+        }
+    });
+    
+    // Allow Enter key to submit
+    licenseInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            activateBtn.click();
+        }
+    });
+}
+
+// Update license status display in footer
+function updateLicenseStatusDisplay(state) {
+    const footer = document.querySelector('.footer');
+    if (footer && state.isValid) {
+        const planName = state.plan?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Licensed';
+        footer.innerHTML = `© 2025 AMPIQ - AMP v4.0.0 | <span style="color: #2ecc71;">${planName}</span>`;
+    }
+}
 
 // StatsManager: single source of truth for stats
 class StatsManager {
@@ -134,7 +275,7 @@ async function updateMonitoringStatus() {
             }
         }
     } catch (error) {
-        console.error('Failed to update monitoring status:', error);
+        logError('Failed to update monitoring status:', error);
         // Set to inactive state on error
         safeUpdateText('active-provider', 'Error');
         safeUpdateText('active-site', 'Error');
@@ -203,9 +344,9 @@ async function initializePopup() {
         // Enforce full height for popup
         setupPopupResize();
         
-        console.log('AMP Popup initialized');
+        log('AMP Popup initialized');
     } catch (error) {
-        console.error('Failed to initialize popup:', error);
+        logError('Failed to initialize popup:', error);
         addActivityEntry('error', 'Initialization failed: ' + error.message);
     }
 }
@@ -230,7 +371,7 @@ function setupActivityLog() {
     
     // Only setup if element exists
     if (!activityLog) {
-        console.log('Activity log element not found, skipping setup');
+        log('Activity log element not found, skipping setup');
         return;
     }
     
@@ -258,7 +399,7 @@ function setupResizableActivityFeed() {
     
     // Only setup if both elements exist
     if (!resizeHandle || !activityFeed) {
-        console.log('Resize elements not found, skipping setup');
+        log('Resize elements not found, skipping setup');
         return;
     }
     
@@ -307,7 +448,7 @@ function setupPopupResize() {
     
     // Only setup if element exists
     if (!resizeHandle) {
-        console.log('Popup resize handle not found, skipping setup');
+        log('Popup resize handle not found, skipping setup');
         return;
     }
     
@@ -400,7 +541,7 @@ async function updateProviderStatus(force = false) {
         const url = tab.url;
         
         let provider = 'Unknown';
-        if (url.includes('chat.openai.com')) {
+        if (url.includes('chat.openai.com') || url.includes('chatgpt.com')) {
             provider = 'ChatGPT';
         } else if (url.includes('claude.ai')) {
             provider = 'Claude';
@@ -441,25 +582,25 @@ async function updateProviderStatus(force = false) {
         }
         addActivityEntry('error', 'Provider detection failed: ' + (error && error.message ? error.message : error));
         showNotification('Provider detection failed', 'error');
-        console.error('Failed to update provider status:', error);
+        logError('Failed to update provider status:', error);
     }
 }
 
 // Enhanced memory stats update with live data
 async function updateMemoryStats() {
     try {
-        console.log('🔧 Dropdown: Sending getMemoryStats request');
+        log('🔧 Dropdown: Sending getMemoryStats request');
         chrome.runtime.sendMessage({ action: 'getMemoryStats' }, (response) => {
-            console.log('🔧 Dropdown: Received response:', response);
+            log('🔧 Dropdown: Received response:', response);
             if (response && response.success && response.stats) {
-                console.log('🔧 Dropdown: Updating stats with:', response.stats);
+                log('🔧 Dropdown: Updating stats with:', response.stats);
                 updateMemoryStatsFromBroadcast(response.stats);
             } else {
-                console.error('🔧 Dropdown: Failed to get memory stats:', response);
+                logError('🔧 Dropdown: Failed to get memory stats:', response);
             }
         });
     } catch (error) {
-        console.error('🔧 Dropdown: Failed to update memory stats:', error);
+        logError('🔧 Dropdown: Failed to update memory stats:', error);
     }
 }
 
@@ -524,7 +665,7 @@ function setupEventListeners() {
         if (element) {
             element.addEventListener(event, handler);
         } else {
-            console.warn(`Element with id '${elementId}' not found, skipping event listener`);
+            log(`Element with id '${elementId}' not found, skipping event listener`);
         }
     }
     
@@ -566,7 +707,7 @@ function setupEventListeners() {
         } catch (error) {
             showNotification('❌ Cascade failed', 'error');
             addActivityEntry('error', 'Cascade failed: ' + error.message);
-            console.error('Cascade error:', error);
+            logError('Cascade error:', error);
         }
     });
 
@@ -580,7 +721,7 @@ function setupEventListeners() {
         } catch (error) {
             showNotification('❌ Injection failed', 'error');
             addActivityEntry('error', 'Injection failed: ' + error.message);
-            console.error('Injection error:', error);
+            logError('Injection error:', error);
         }
     });
 
@@ -604,7 +745,7 @@ function setupEventListeners() {
         } catch (error) {
             showNotification('❌ Export failed', 'error');
             addActivityEntry('error', 'Export failed: ' + error.message);
-            console.error('Export error:', error);
+            logError('Export error:', error);
         }
     });
 
@@ -647,7 +788,7 @@ function setupEventListeners() {
             } catch (error) {
                 showNotification('❌ Window open error', 'error');
                 addActivityEntry('error', 'Window open error: ' + error.message);
-                console.error('Open window error:', error);
+                logError('Open window error:', error);
             }
         });
     }
@@ -663,7 +804,7 @@ function setupEventListeners() {
             } catch (error) {
                 showNotification('❌ Clear failed', 'error');
                 addActivityEntry('error', 'Memory clear failed: ' + error.message);
-                console.error('Clear error:', error);
+                logError('Clear error:', error);
             }
         }
     });
@@ -679,7 +820,7 @@ function setupEventListeners() {
         } catch (error) {
             showNotification('❌ Stats failed', 'error');
             addActivityEntry('error', 'Stats failed: ' + error.message);
-            console.error('Stats error:', error);
+            logError('Stats error:', error);
         }
     });
 
@@ -696,22 +837,37 @@ function setupEventListeners() {
             } else {
                 showNotification('❌ Send failed', 'error');
                 addActivityEntry('error', 'Failed to send memory to desktop');
-                console.error('Send to desktop failed:', response);
+                logError('Send to desktop failed:', response);
             }
         } catch (error) {
             showNotification('❌ Send error', 'error');
             addActivityEntry('error', 'Send error: ' + error.message);
-            console.error('Send to desktop error:', error);
+            logError('Send to desktop error:', error);
         }
     });
 }
 
-// Enhanced periodic updates
+// PERFORMANCE: Reduced update frequencies
+const DROPDOWN_PERF = {
+    SESSION_TIMER_INTERVAL: 1000,  // Keep at 1s for accurate clock
+    STATS_UPDATE_INTERVAL: 10000,  // 10s instead of 5s
+    CONNECTION_CHECK_CHANCE: 0.05  // 5% chance = ~every 200 seconds
+};
+
+// Enhanced periodic updates with performance optimization
 function startPeriodicUpdates() {
     let lastConnectionStatus = null;
+    let isPopupVisible = true;
+    
+    // Detect when popup loses focus to reduce updates
+    document.addEventListener('visibilitychange', () => {
+        isPopupVisible = !document.hidden;
+    });
     
     // Update session time every second like a clock
     const sessionTimer = setInterval(() => {
+        if (!isPopupVisible) return; // Skip if popup not visible
+        
         const sessionTime = document.getElementById('session-time');
         if (sessionTime) {
             const seconds = Math.floor((Date.now() - sessionStartTime) / 1000);
@@ -719,10 +875,12 @@ function startPeriodicUpdates() {
             const secs = seconds % 60;
             sessionTime.textContent = `${minutes}:${secs.toString().padStart(2, '0')}`;
         }
-    }, 1000);
+    }, DROPDOWN_PERF.SESSION_TIMER_INTERVAL);
     
-    // Update stats every 5 seconds instead of 1 second to reduce spam
+    // Update stats every 10 seconds (reduced from 5s)
     updateInterval = setInterval(async () => {
+        if (!isPopupVisible) return; // Skip if popup not visible
+        
         try {
             // Get memory stats and update UI
             await updateMemoryStats();
@@ -730,8 +888,8 @@ function startPeriodicUpdates() {
             await updateProviderStatus();
             await updateMonitoringStatus();
             
-            // Update desktop status less frequently and only log changes
-            if (Math.random() < 0.1) { // 10% chance each update (every ~50 seconds)
+            // Update desktop status very infrequently
+            if (Math.random() < DROPDOWN_PERF.CONNECTION_CHECK_CHANCE) {
                 const currentStatus = await checkAmpServerStatus();
                 if (currentStatus !== lastConnectionStatus) {
                     lastConnectionStatus = currentStatus;
@@ -743,22 +901,15 @@ function startPeriodicUpdates() {
                 }
             }
         } catch (error) {
-            console.error('🔧 Dropdown: Periodic update error:', error);
+            // Silently ignore errors to reduce console spam
         }  
-    }, 5000); // Changed from 1000ms to 5000ms
+    }, DROPDOWN_PERF.STATS_UPDATE_INTERVAL); // 10 seconds
     
-    // Listen for stats updates from background script
+    // Listen for stats updates from background script (single unified listener)
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        if (message.action === 'statsUpdate' && message.stats) {
-            console.log('🔧 Dropdown: Received statsUpdate broadcast:', message.stats);
-            updateMemoryStatsFromBroadcast(message.stats);
-        }
-    });
-    
-    // Also listen for the statsUpdate action directly
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        if (message.type === 'statsUpdate' && message.stats) {
-            console.log('🔧 Dropdown: Received statsUpdate message:', message.stats);
+        // Handle both message.action and message.type formats
+        if ((message.action === 'statsUpdate' || message.type === 'statsUpdate') && message.stats) {
+            log('🔧 Dropdown: Received statsUpdate:', message.stats);
             updateMemoryStatsFromBroadcast(message.stats);
         }
     });
@@ -768,7 +919,7 @@ function startPeriodicUpdates() {
 function updateMemoryStatsFromBroadcast(stats) {
     statsManager.updateStats(stats);
     try {
-        console.log('🔧 Dropdown: Updating stats from broadcast:', stats);
+        log('🔧 Dropdown: Updating stats from broadcast:', stats);
         
         // Update all stat fields with live values or fallback to 0
         safeUpdateText('dom-count', stats.domChunks ?? 0);
@@ -793,7 +944,7 @@ function updateMemoryStatsFromBroadcast(stats) {
             }
         }
     } catch (error) {
-        console.error('🔧 Dropdown: Failed to update stats from broadcast:', error);
+        logError('🔧 Dropdown: Failed to update stats from broadcast:', error);
     }
 }
 

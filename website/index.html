@@ -1,0 +1,1023 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AMP - Automatic Memory Persistence</title>
+  <meta name="description" content="AMP captures and preserves your AI conversations from ChatGPT, Claude, Gemini, and more. Infinite context memory for AI power users.">
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #08080c;
+      --bg-secondary: #0e0e14;
+      --bg-tertiary: #16161f;
+      --bg-card: rgba(14,14,20,0.9);
+      --text-primary: #e8e8ed;
+      --text-secondary: #9898a8;
+      --text-muted: #58586a;
+      --accent-cyan: #00d4ff;
+      --accent-magenta: #ff00aa;
+      --accent-green: #00ff88;
+      --border-color: rgba(255,255,255,0.06);
+      --border-hover: rgba(0,212,255,0.4);
+      --gradient-main: linear-gradient(135deg, #00d4ff 0%, #ff00aa 50%, #00ff88 100%);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      background-image: 
+        radial-gradient(ellipse at top right, rgba(0, 212, 255, 0.08) 0%, transparent 50%),
+        radial-gradient(ellipse at bottom left, rgba(255, 0, 170, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse at center, rgba(0, 255, 136, 0.03) 0%, transparent 70%);
+      color: var(--text-primary);
+      line-height: 1.65;
+      overflow-x: hidden;
+    }
+
+    .bg-grid {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        linear-gradient(rgba(0,212,255,0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,212,255,0.02) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .bg-glow {
+      position: fixed;
+      width: 800px;
+      height: 800px;
+      border-radius: 50%;
+      filter: blur(180px);
+      opacity: 0.35;
+      pointer-events: none;
+      z-index: 0;
+      animation: glow-pulse 8s ease-in-out infinite alternate;
+    }
+
+    @keyframes glow-pulse {
+      0% { opacity: 0.25; transform: scale(1); }
+      100% { opacity: 0.45; transform: scale(1.15); }
+    }
+
+    .bg-glow-1 { top: -200px; right: -200px; background: var(--accent-cyan); animation-delay: 0s; }
+    .bg-glow-2 { bottom: -200px; left: -200px; background: var(--accent-magenta); animation-delay: 4s; }
+    .bg-glow-3 { top: 30%; left: 50%; transform: translateX(-50%); background: var(--accent-green); opacity: 0.15; width: 1000px; height: 500px; }
+    .bg-glow-4 { top: 60%; right: 10%; background: var(--accent-cyan); opacity: 0.2; width: 600px; height: 600px; animation-delay: 2s; }
+    .bg-glow-5 { top: 80%; left: 20%; background: var(--accent-magenta); opacity: 0.15; width: 500px; height: 500px; animation-delay: 6s; }
+
+    /* Navigation */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      padding: 1rem 2rem;
+      background: rgba(8,8,12,0.85);
+      backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .nav-content {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      text-decoration: none;
+    }
+
+    .logo svg {
+      width: 36px;
+      height: 36px;
+    }
+
+    .logo-text {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2.5rem;
+      align-items: center;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+
+    /* Hero */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 7rem 2rem 4rem;
+      z-index: 1;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 120%;
+      height: 120%;
+      background: radial-gradient(ellipse at center, rgba(0, 212, 255, 0.15) 0%, rgba(255, 0, 170, 0.1) 30%, transparent 70%);
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    .hero-content {
+      max-width: 800px;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      padding: 0.4rem 1rem;
+      border-radius: 50px;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 2rem;
+    }
+
+    .hero-badge-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent-green);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.5rem);
+      font-weight: 700;
+      line-height: 1.15;
+      margin-bottom: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+
+    .hero h1 .gradient {
+      background: var(--gradient-main);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero-subtitle {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 550px;
+      margin: 0 auto 2.5rem;
+    }
+
+    .hero-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--gradient-main);
+      color: var(--bg-primary);
+      padding: 0.9rem 2rem;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .hero-cta:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 35px rgba(0,212,255,0.3);
+    }
+
+    .hero-stats {
+      display: flex;
+      justify-content: center;
+      gap: 3rem;
+      margin-top: 4rem;
+      padding-top: 2.5rem;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .stat-value {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.75rem;
+      font-weight: 600;
+      background: var(--gradient-main);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.2rem;
+    }
+
+    /* Sections */
+    section {
+      position: relative;
+      z-index: 1;
+    }
+
+    .section-header {
+      text-align: center;
+      max-width: 550px;
+      margin: 0 auto 3rem;
+    }
+
+    .section-header h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+      letter-spacing: -0.01em;
+    }
+
+    .section-header p {
+      color: var(--text-secondary);
+      font-size: 1rem;
+    }
+
+    /* Features */
+    .features {
+      padding: 5rem 2rem;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.25rem;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .feature-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 1.75rem;
+      transition: border-color 0.3s, transform 0.3s;
+    }
+
+    .feature-card:hover {
+      border-color: var(--border-hover);
+      transform: translateY(-3px);
+    }
+
+    .feature-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--bg-tertiary);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+      font-family: 'IBM Plex Mono', monospace;
+      font-weight: 600;
+      font-size: 1.1rem;
+      color: var(--accent-cyan);
+    }
+
+    .feature-card h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .feature-card p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      line-height: 1.6;
+    }
+
+    /* Platforms */
+    .platforms {
+      padding: 5rem 2rem;
+      background: var(--bg-secondary);
+    }
+
+    .platforms-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0.75rem;
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .platform-badge {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border-color);
+      padding: 0.6rem 1.1rem;
+      border-radius: 50px;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+
+    /* Pricing */
+    .pricing {
+      padding: 5rem 2rem;
+      position: relative;
+    }
+
+    .pricing::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(ellipse at center, rgba(0, 212, 255, 0.12) 0%, rgba(255, 0, 170, 0.08) 40%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .pricing-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      max-width: 750px;
+      margin: 0 auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .pricing-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .pricing-card.featured {
+      border-color: var(--accent-cyan);
+    }
+
+    .pricing-card.featured::before {
+      content: 'Recommended';
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--gradient-main);
+      color: var(--bg-primary);
+      padding: 0.25rem 0.9rem;
+      border-radius: 50px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .pricing-card h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .pricing-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1.25rem;
+    }
+
+    .pricing-options {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .price-option {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .price-divider {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .pricing-price {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 1.75rem;
+      font-weight: 600;
+    }
+
+    .pricing-price.lifetime {
+      color: var(--accent-cyan);
+    }
+
+    .pricing-price span {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    .btn-sm {
+      padding: 0.5rem 1rem;
+      font-size: 0.8rem;
+    }
+
+    .pricing-features {
+      list-style: none;
+      flex: 1;
+      margin-bottom: 1.5rem;
+    }
+
+    .pricing-features li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.4rem 0;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    .pricing-features li::before {
+      content: '';
+      width: 16px;
+      height: 16px;
+      min-width: 16px;
+      margin-top: 2px;
+      background: var(--accent-green);
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E") center/contain no-repeat;
+      -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='3'%3E%3Cpath d='M5 13l4 4L19 7'/%3E%3C/svg%3E") center/contain no-repeat;
+    }
+
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.85rem 1.5rem;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.2s;
+      cursor: pointer;
+      border: none;
+    }
+
+    .btn-primary {
+      background: var(--gradient-main);
+      color: var(--bg-primary);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0,212,255,0.3);
+    }
+
+    .btn-secondary {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--border-hover);
+    }
+
+    /* Download */
+    .download {
+      padding: 5rem 2rem;
+      background: var(--bg-secondary);
+    }
+
+    .download-content {
+      max-width: 600px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .download-content h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.75rem;
+    }
+
+    .download-content > p {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .download-info {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: var(--bg-tertiary);
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+    }
+
+    .download-info p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin: 0;
+    }
+
+    /* FAQ */
+    .faq {
+      padding: 5rem 2rem;
+    }
+
+    .faq-list {
+      max-width: 650px;
+      margin: 0 auto;
+    }
+
+    .faq-item {
+      border-bottom: 1px solid var(--border-color);
+      padding: 1.25rem 0;
+    }
+
+    .faq-question {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.6rem;
+    }
+
+    .faq-answer {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      line-height: 1.7;
+    }
+
+    /* Footer */
+    footer {
+      position: relative;
+      padding: 3rem 2rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+      z-index: 1;
+    }
+
+    .footer-content {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+    }
+
+    .footer-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .footer-logo svg {
+      width: 28px;
+      height: 28px;
+    }
+
+    .footer-logo span {
+      font-family: 'IBM Plex Mono', monospace;
+      font-weight: 500;
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .footer-copyright {
+      width: 100%;
+      text-align: center;
+      padding-top: 1.5rem;
+      margin-top: 1.5rem;
+      border-top: 1px solid var(--border-color);
+      color: var(--text-muted);
+      font-size: 0.8rem;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .hero-stats { flex-direction: column; gap: 1.25rem; }
+      .pricing-cards { grid-template-columns: 1fr; }
+      .footer-content { flex-direction: column; text-align: center; }
+      .footer-links { flex-wrap: wrap; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+  <div class="bg-glow bg-glow-3"></div>
+  <div class="bg-glow bg-glow-4"></div>
+  <div class="bg-glow bg-glow-5"></div>
+
+  <nav>
+    <div class="nav-content">
+      <a href="#" class="logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="red"/>
+              <stop offset="14%" stop-color="orange"/>
+              <stop offset="28%" stop-color="yellow"/>
+              <stop offset="42%" stop-color="lime"/>
+              <stop offset="57%" stop-color="cyan"/>
+              <stop offset="71%" stop-color="blue"/>
+              <stop offset="85%" stop-color="magenta"/>
+              <stop offset="100%" stop-color="red"/>
+              <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="6s" repeatCount="indefinite"/>
+            </linearGradient>
+          </defs>
+          <rect x="7.31" y="-15.13" width="30.63" height="30.63" rx="15.32" fill="#030303" transform="rotate(44.53)"/>
+          <path fill-rule="evenodd" clip-rule="evenodd" d="m 14.617,17.437 c 0.431,0.017 0.869,0.037 1.314,0.057 l 0.481,0.022 c 0.341,0.016 0.686,0.032 1.033,0.046 l 0.142,0.006 c 4.484,0.173 9.453,0.025 13.206,-3.775 l -2.128,-2.102 c -0.757,0.766 -1.58,1.34 -2.468,1.767 L 18.415,5.771 C 18.831,4.879 19.395,4.048 20.151,3.282 L 18.023,1.18 C 14.27,4.98 14.184,9.951 14.413,14.432 9.929,14.259 4.96,14.407 1.206,18.208 l 2.129,2.102 c 0.756,-0.766 1.58,-1.34 2.467,-1.767 l 7.783,7.686 c -0.416,0.893 -0.98,1.723 -1.737,2.49 l 2.129,2.102 c 2.93,-2.968 3.625,-6.649 3.68,-10.253 -0.438,-0.017 -0.861,-0.037 -1.266,-0.056 l -0.599,-0.028 c -0.39,-0.018 -0.768,-0.034 -1.132,-0.048 -0.01,0.864 -0.056,1.695 -0.161,2.492 L 9.093,17.588 C 10.771,17.345 12.606,17.359 14.582,17.436 Z m 2.884,-8.363 5.406,5.339 c -1.678,0.242 -3.513,0.228 -5.489,0.152 -0.101,-1.975 -0.138,-3.81 0.083,-5.491 z" fill="#ffffff"/>
+          <circle cx="16" cy="16" fill="none" stroke="url(#gradient)" stroke-width="1.5" r="15"/>
+        </svg>
+        <span class="logo-text">AMP</span>
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#platforms">Platforms</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#download">Download</a>
+        <a href="#faq">FAQ</a>
+      </div>
+    </div>
+  </nav>
+
+  <section class="hero" id="home">
+    <div class="hero-content">
+      <div class="hero-badge">
+        <span class="hero-badge-dot"></span>
+        <span>Version 4.0</span>
+      </div>
+      <h1>Never Lose an <span class="gradient">AI Conversation</span> Again</h1>
+      <p class="hero-subtitle">AMP automatically captures and preserves your conversations with ChatGPT, Claude, Gemini, and more. Infinite context memory for AI power users.</p>
+      <a href="#pricing" class="hero-cta">Get Started</a>
+      <div class="hero-stats">
+        <div class="stat">
+          <div class="stat-value">8+</div>
+          <div class="stat-label">AI Platforms</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">5MB</div>
+          <div class="stat-label">Hot Memory</div>
+        </div>
+        <div class="stat">
+          <div class="stat-value">100%</div>
+          <div class="stat-label">Local Storage</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="section-header">
+      <h2>Features</h2>
+      <p>Everything you need to preserve and manage your AI conversation history</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">A</div>
+        <h3>Automatic Capture</h3>
+        <p>Runs silently in the background, detecting AI platforms and capturing conversations in real-time.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">M</div>
+        <h3>Smart Memory</h3>
+        <p>Efficient memory pools with automatic deduplication. Minimal browser resources while maintaining instant access.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">P</div>
+        <h3>Privacy First</h3>
+        <p>All data stays on your device. No external servers, no cloud sync, no tracking.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">D</div>
+        <h3>Desktop Integration</h3>
+        <p>Cascade data to the desktop app for persistent SQLite storage with full offline access.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">I</div>
+        <h3>Context Injection</h3>
+        <p>Retrieve and inject previous context back into new conversations without searching chat logs.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">R</div>
+        <h3>Real-Time Feed</h3>
+        <p>Monitor captured data through the extension popup. View activity and storage stats at a glance.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="platforms" id="platforms">
+    <div class="section-header">
+      <h2>Supported Platforms</h2>
+      <p>Auto-detection for major AI assistants, plus manual capture on any website</p>
+    </div>
+    <div class="platforms-grid">
+      <div class="platform-badge">ChatGPT</div>
+      <div class="platform-badge">Claude</div>
+      <div class="platform-badge">Google Gemini</div>
+      <div class="platform-badge">Perplexity</div>
+      <div class="platform-badge">Poe</div>
+      <div class="platform-badge">Character.ai</div>
+      <div class="platform-badge">You.com</div>
+      <div class="platform-badge">Blackbox AI</div>
+      <div class="platform-badge">+ Any Website</div>
+    </div>
+  </section>
+
+  <section class="pricing" id="pricing">
+    <div class="section-header">
+      <h2>Pricing</h2>
+      <p>Choose monthly flexibility or save with lifetime access</p>
+    </div>
+    <div class="pricing-cards">
+      <div class="pricing-card">
+        <h3>Extension Only</h3>
+        <p class="pricing-desc">Browser-based capture</p>
+        <div class="pricing-options">
+          <div class="price-option">
+            <div class="pricing-price">$9 <span>/month</span></div>
+            <button onclick="checkout('ext_monthly')" class="btn btn-secondary btn-sm">Subscribe Monthly</button>
+          </div>
+          <div class="price-divider">or</div>
+          <div class="price-option">
+            <div class="pricing-price lifetime">$49 <span>one-time</span></div>
+            <button onclick="checkout('ext_lifetime')" class="btn btn-secondary btn-sm">Buy Lifetime</button>
+          </div>
+        </div>
+        <ul class="pricing-features">
+          <li>Chrome Extension</li>
+          <li>All 8+ AI Platforms</li>
+          <li>5MB Hot Memory Pool</li>
+          <li>Real-Time Activity Feed</li>
+          <li>Local Browser Storage</li>
+          <li>Lifetime Updates</li>
+        </ul>
+      </div>
+      <div class="pricing-card featured">
+        <h3>Complete Package</h3>
+        <p class="pricing-desc">Extension + Desktop App</p>
+        <div class="pricing-options">
+          <div class="price-option">
+            <div class="pricing-price">$19 <span>/month</span></div>
+            <button onclick="checkout('complete_monthly')" class="btn btn-primary btn-sm">Subscribe Monthly</button>
+          </div>
+          <div class="price-divider">or</div>
+          <div class="price-option">
+            <div class="pricing-price lifetime">$99 <span>one-time</span></div>
+            <button onclick="checkout('complete_lifetime')" class="btn btn-primary btn-sm">Buy Lifetime</button>
+          </div>
+        </div>
+        <ul class="pricing-features">
+          <li>Everything in Extension</li>
+          <li>Desktop App Included</li>
+          <li>SQLite Persistent Storage</li>
+          <li>Unlimited Local Storage</li>
+          <li>Native Messaging Integration</li>
+          <li>Context Injection System</li>
+          <li>Priority Support</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="download" id="download">
+    <div class="download-content">
+      <h2>Desktop App</h2>
+      <p>Persistent local storage with SQLite, unlimited capacity, and seamless integration with the Chrome extension.</p>
+      <a href="AMPiQ-Setup-4.0.0.exe" class="btn btn-primary" download>Download for Windows</a>
+      <div class="download-info">
+        <p>Version 4.0.0 | Windows 10/11 | 75 MB</p>
+        <p style="margin-top: 0.4rem;">Free download. Requires Complete Package license to activate full features.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="faq" id="faq">
+    <div class="section-header">
+      <h2>FAQ</h2>
+    </div>
+    <div class="faq-list">
+      <div class="faq-item">
+        <div class="faq-question">How does AMP capture conversations?</div>
+        <div class="faq-answer">AMP runs as a Chrome extension that monitors supported AI chat pages. When you interact with ChatGPT, Claude, or other platforms, AMP automatically detects and stores the conversation data locally in your browser.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-question">Is my data private?</div>
+        <div class="faq-answer">Yes. All captured data is stored locally on your device. The extension does not transmit your conversations anywhere. If you use the desktop app, data is stored in a local SQLite database on your computer.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-question">What is the desktop app for?</div>
+        <div class="faq-answer">The desktop app provides persistent storage beyond browser memory limits. It uses SQLite to store unlimited conversation history locally. The extension can cascade data to the desktop app for long-term preservation.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-question">Can I use AMP on other AI chat sites?</div>
+        <div class="faq-answer">Yes. While AMP auto-detects 8 major platforms, you can enable capture on any website by clicking the extension icon.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-question">Do I need the desktop app?</div>
+        <div class="faq-answer">No. The extension works standalone with 5MB of hot memory storage. The desktop app is optional but recommended for users who want unlimited persistent storage.</div>
+      </div>
+      <div class="faq-item">
+        <div class="faq-question">Is this a subscription?</div>
+        <div class="faq-answer">You choose! AMP offers both monthly subscriptions and lifetime one-time purchases. Lifetime gives you permanent access with all future updates included.</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-content">
+      <div class="footer-logo">
+        <svg width="28" height="28" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="gradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="red"/>
+              <stop offset="14%" stop-color="orange"/>
+              <stop offset="28%" stop-color="yellow"/>
+              <stop offset="42%" stop-color="lime"/>
+              <stop offset="57%" stop-color="cyan"/>
+              <stop offset="71%" stop-color="blue"/>
+              <stop offset="85%" stop-color="magenta"/>
+              <stop offset="100%" stop-color="red"/>
+              <animateTransform attributeName="gradientTransform" type="rotate" from="0 0.5 0.5" to="360 0.5 0.5" dur="6s" repeatCount="indefinite"/>
+            </linearGradient>
+          </defs>
+          <rect x="7.31" y="-15.13" width="30.63" height="30.63" rx="15.32" fill="#030303" transform="rotate(44.53)"/>
+          <path fill-rule="evenodd" clip-rule="evenodd" d="m 14.617,17.437 c 0.431,0.017 0.869,0.037 1.314,0.057 l 0.481,0.022 c 0.341,0.016 0.686,0.032 1.033,0.046 l 0.142,0.006 c 4.484,0.173 9.453,0.025 13.206,-3.775 l -2.128,-2.102 c -0.757,0.766 -1.58,1.34 -2.468,1.767 L 18.415,5.771 C 18.831,4.879 19.395,4.048 20.151,3.282 L 18.023,1.18 C 14.27,4.98 14.184,9.951 14.413,14.432 9.929,14.259 4.96,14.407 1.206,18.208 l 2.129,2.102 c 0.756,-0.766 1.58,-1.34 2.467,-1.767 l 7.783,7.686 c -0.416,0.893 -0.98,1.723 -1.737,2.49 l 2.129,2.102 c 2.93,-2.968 3.625,-6.649 3.68,-10.253 -0.438,-0.017 -0.861,-0.037 -1.266,-0.056 l -0.599,-0.028 c -0.39,-0.018 -0.768,-0.034 -1.132,-0.048 -0.01,0.864 -0.056,1.695 -0.161,2.492 L 9.093,17.588 C 10.771,17.345 12.606,17.359 14.582,17.436 Z m 2.884,-8.363 5.406,5.339 c -1.678,0.242 -3.513,0.228 -5.489,0.152 -0.101,-1.975 -0.138,-3.81 0.083,-5.491 z" fill="#ffffff"/>
+          <circle cx="16" cy="16" fill="none" stroke="url(#gradient2)" stroke-width="1.5" r="15"/>
+        </svg>
+        <span>AMP</span>
+      </div>
+      <div class="footer-links">
+        <a href="#features">Features</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="terms.html">Terms</a>
+        <a href="mailto:ampi@ampiq.info">Support</a>
+        <a href="#" onclick="manageSubscription(); return false;">Manage Subscription</a>
+      </div>
+      <div class="footer-copyright">
+        2025 AMPiQ. All rights reserved.
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Smooth scrolling for anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+
+    // API URL for Stripe checkout
+    // Use Vercel URL until api.ampiq.info DNS is configured
+    const API_URL = 'https://amp-license-api.vercel.app';
+
+    // Stripe Checkout function
+    async function checkout(plan) {
+      const button = event.target;
+      const originalText = button.textContent;
+      
+      try {
+        button.disabled = true;
+        button.textContent = 'Processing...';
+        
+        const response = await fetch(`${API_URL}/api/checkout`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ plan }),
+        });
+
+        const data = await response.json();
+
+        if (data.url) {
+          // Redirect to Stripe Checkout
+          window.location.href = data.url;
+        } else {
+          throw new Error(data.error || 'Failed to create checkout session');
+        }
+      } catch (error) {
+        console.error('Checkout error:', error);
+        alert('Unable to process checkout. Please try again or contact support.');
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+    }
+
+    // Manage subscription - opens Stripe Customer Portal
+    async function manageSubscription() {
+      const email = prompt('Enter the email address you used to purchase:');
+      
+      if (!email) {
+        return; // User cancelled
+      }
+
+      try {
+        const response = await fetch(`${API_URL}/api/portal`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ email }),
+        });
+
+        const data = await response.json();
+
+        if (data.url) {
+          window.location.href = data.url;
+        } else {
+          alert(data.error || 'Unable to find subscription for this email. Please check and try again.');
+        }
+      } catch (error) {
+        console.error('Portal error:', error);
+        alert('Unable to access subscription portal. Please try again or contact support.');
+      }
+    }
+
+  </script>
+</body>
+</html>

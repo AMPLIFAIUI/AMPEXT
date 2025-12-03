@@ -1,12 +1,18 @@
 #!/usr/bin/env node
 // Native Messaging Host for AMPiQ - Bridge between Chrome extension and Desktop app
+// Version: 4.0.0 - Production
+
+// Production logging - set to false to disable debug logs
+const AMP_DEBUG = false;
+const log = (...args) => AMP_DEBUG && console.error('[AMP Host]', ...args);
+const logError = (...args) => console.error('[AMP Host]', ...args);
 
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
-// Import SQLite storage from desktop-ui
-const AMPSQLiteStorage = require('./desktop-ui/sqlite-storage');
+// Import SQLite storage (same directory when packaged)
+const AMPSQLiteStorage = require('./sqlite-storage');
 
 // Create storage directory in user's home folder
 const storageDir = path.join(process.env.HOME || process.env.USERPROFILE, '.ampiq', 'storage');
@@ -22,14 +28,14 @@ async function initializeStorage() {
     sqliteStorage = new AMPSQLiteStorage();
     const initialized = await sqliteStorage.initialize();
     if (initialized) {
-      console.error('SQLite storage initialized successfully');
+      logError('SQLite storage initialized successfully');
       sqliteAvailable = true;
     } else {
-      console.error('Failed to initialize SQLite storage - will use file-based fallback');
+      logError('Failed to initialize SQLite storage - will use file-based fallback');
       sqliteAvailable = false;
     }
   } catch (error) {
-    console.error('Error initializing SQLite storage - will use file-based fallback:', error.message);
+    logError('Error initializing SQLite storage - will use file-based fallback:', error.message);
     sqliteAvailable = false;
   }
 }
@@ -59,7 +65,7 @@ function saveSQLiteChunk(chunk) {
       return { success: false, error: 'SQLite not initialized' };
     }
   } catch (error) {
-    console.error('Failed to save chunk to SQLite:', error);
+    logError('Failed to save chunk to SQLite:', error);
     return { success: false, error: error.message };
   }
 }
@@ -99,7 +105,7 @@ function processMessages() {
       const message = JSON.parse(msgData.toString());
       handleMessage(message);
     } catch (e) {
-      console.error('Error parsing message:', e);
+      logError('Error parsing message:', e);
       writeMessage({ type: 'error', error: e.message });
     }
   }
@@ -131,7 +137,7 @@ function saveOverflowChunk(chunk) {
     
     return { success: true, filename };
   } catch (error) {
-    console.error('Failed to save overflow chunk:', error);
+    logError('Failed to save overflow chunk:', error);
     return { success: false, error: error.message };
   }
 }
@@ -157,7 +163,7 @@ function saveAllMemory(chunks, metadata) {
     
     return { success: true, filename, chunkCount: chunks.length };
   } catch (error) {
-    console.error('Failed to save all memory:', error);
+    logError('Failed to save all memory:', error);
     return { success: false, error: error.message };
   }
 }
@@ -165,7 +171,7 @@ function saveAllMemory(chunks, metadata) {
 function handleMessage(msg) {
   // Don't use console.log as it interferes with stdout communication
   // Use console.error for debugging (goes to stderr, not stdout)
-  console.error('Native Host: Received message:', msg.type);
+  logError('Native Host: Received message:', msg.type);
   
   // Include requestId in response for proper tracking
   const requestId = msg.requestId;
@@ -224,7 +230,7 @@ function handleMessage(msg) {
     
   } else if (msg.type === 'cascadeMemory' && Array.isArray(msg.chunks)) {
     // Handle CASCADE from extension - bulk save all chunks to desktop storage
-    console.error(`💧 Native Host: Cascade received with ${msg.chunks.length} chunks`);
+    logError(`💧 Native Host: Cascade received with ${msg.chunks.length} chunks`);
     
     let sqliteSuccessCount = 0;
     for (const chunk of msg.chunks) {
@@ -243,7 +249,7 @@ function handleMessage(msg) {
     // Get updated stats
     const stats = getStorageStats();
     
-    console.error(`💧 Native Host: Cascade complete - SQLite: ${sqliteSuccessCount}, File: ${fileResult.success}`);
+    logError(`💧 Native Host: Cascade complete - SQLite: ${sqliteSuccessCount}, File: ${fileResult.success}`);
     
     writeMessage({ 
       type: 'cascade_complete', 

@@ -1,5 +1,6 @@
-https://github.com/AMPLIFAIUI/AMPEXTnode_modules/
+node_modules/
 .env
+.env.local
 config.json
 data/
 build/
@@ -9,14 +10,16 @@ dist/
 *.deb
 *.rpm
 *.AppImage
+*.blockmap
 desktop-ui/build/
 desktop-ui/dist/
 desktop-ui/temp-build/
-node_modules
 venv/
-*.exe
-*.dmg
-*.deb
-*.rpm
-*.AppImage
-*.blockmap
+
+# Private keys - NEVER commit these
+*.pem
+privatekey.pem
+publickey.pem
+
+# API backend has its own repo
+api-backend/

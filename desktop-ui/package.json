@@ -3,7 +3,7 @@
   "version": "4.0.0",
   "description": "A.M.P - Advanced Memory Persistence",
   "main": "main.js",
-  "icon": "../assets/icon256.png",
+  "icon": "assets/icon256.png",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
@@ -16,7 +16,7 @@
     "appId": "com.ampiq.desktop",
     "productName": "AMPiQ",
     "directories": {
-      "output": "temp-build"
+      "output": "dist"
     },
     "buildDependenciesFromSource": false,
     "npmRebuild": false,
@@ -28,7 +28,9 @@
       "!*.md"
     ],
     "asarUnpack": [
-      "node_modules/better-sqlite3/**"
+      "node_modules/better-sqlite3/**",
+      "amp-native-host.js",
+      "sqlite-storage.js"
     ],
     "win": {
       "target": [
@@ -37,7 +39,7 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "../assets/icon256.png",
+      "icon": "assets/icon256.png",
       "signAndEditExecutable": false
     },
     "nsis": {
@@ -46,9 +48,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "deleteAppDataOnUninstall": true,
-      "installerIcon": "../assets/icon128.ico",
-      "uninstallerIcon": "../assets/icon128.ico",
-      "installerHeaderIcon": "../assets/icon128.ico",
+      "installerIcon": "assets/icon128.ico",
+      "uninstallerIcon": "assets/icon128.ico",
+      "installerHeaderIcon": "assets/icon128.ico",
       "license": "../LICENSE",
       "include": "installer.nsh"
     },
