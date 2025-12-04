@@ -27,8 +27,9 @@ AMP (Automated Memory Persistence) is an "infinite context window" system for AI
 │  │  ┌───────────┐  │     │  │                    │ Overflow             │  │ │
 │  │  │content.js │  │     │  │                    ▼                      │  │ │
 │  │  │MutationObs│──┼─────┼─▶│  ┌─────────────────────────────────────┐  │  │ │
-│  │  └───────────┘  │     │  │  │  Native Messaging (chrome.runtime)  │  │  │ │
-│  │                 │     │  │  │  connectNative('com.ampiq.amp.native')│  │  │ │
+│  │  └───────────┘  │     │  │  │     Native Messaging Client          │  │  │ │
+│  │                 │     │  │  │  chrome.runtime.connectNative()      │  │  │ │
+│  │                 │     │  │  │  Host: 'com.ampiq.amp.native'        │  │  │ │
 │  │                 │     │  │  └─────────────────────────────────────┘  │  │ │
 │  └─────────────────┘     │  └────────────────────────────────────────────┘  │ │
 │                          │                      │                            │ │
@@ -47,6 +48,7 @@ AMP (Automated Memory Persistence) is an "infinite context window" system for AI
 └─────────────────────────────────────────────────────────────────────────────┘
                                           │
                                           │ Native Messaging (stdin/stdout)
+                                          │ 4-byte length prefix protocol
                                           ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     NATIVE MESSAGING HOST (Node.js)                          │
@@ -57,10 +59,11 @@ AMP (Automated Memory Persistence) is an "infinite context window" system for AI
 │  │  │              Message Handlers:                                  │  │   │
 │  │  │    ping           - Connection test → pong                     │  │   │
 │  │  │    status         - Storage stats                              │  │   │
-│  │  │    sendAllMemory  - Store chunks → all_memory_saved            │  │   │
-│  │  │    overflow       - Store overflow chunk                       │  │   │
+│  │  │    overflow       - Store overflow chunk to SQLite             │  │   │
+│  │  │    sendAllMemory  - Bulk store chunks → all_memory_saved       │  │   │
+│  │  │    cascadeMemory  - Cascade all memory → cascade_complete      │  │   │
 │  │  │    getMemoryStats - Get storage statistics                     │  │   │
-│  │  │    search_memory  - Search stored data                         │  │   │
+│  │  │    search_memory  - Search stored data (FTS5)                  │  │   │
 │  │  │    get_memory_data - Retrieve stored chunks                    │  │   │
 │  │  └────────────────────────────────────────────────────────────────┘  │   │
 │  │                               │                                       │   │
@@ -70,12 +73,13 @@ AMP (Automated Memory Persistence) is an "infinite context window" system for AI
 │  │  │  Tables:                                                        │  │   │
 │  │  │    - conversations (id, provider, topic, timestamps)           │  │   │
 │  │  │    - memory_chunks (content, metadata, FTS indexed)            │  │   │
-│  │  │    - memory_search (FTS virtual table)                         │  │   │
+│  │  │    - memory_search (FTS5 virtual table for fast search)        │  │   │
+│  │  │  Location: ~/.ampiq/AMP/memory.db                              │  │   │
 │  │  └────────────────────────────────────────────────────────────────┘  │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
                                           │
-                                          │ File System / Shared SQLite
+                                          │ Shared SQLite Database
                                           ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     DESKTOP APP (Electron) - OPTIONAL GUI                    │
@@ -85,6 +89,7 @@ AMP (Automated Memory Persistence) is an "infinite context window" system for AI
 │  │  ┌────────────────────────────────────────────────────────────────┐  │   │
 │  │  │              Reads same SQLite database                         │  │   │
 │  │  │              Provides GUI for viewing stored data               │  │   │
+│  │  │              Database: ~/.ampiq/AMP/memory.db                   │  │   │
 │  │  └────────────────────────────────────────────────────────────────┘  │   │
 │  │                               │                                       │   │
 │  │                               ▼                                       │   │
@@ -93,6 +98,7 @@ AMP (Automated Memory Persistence) is an "infinite context window" system for AI
 │  │  │    - Connection status display                                  │  │   │
 │  │  │    - Memory statistics                                          │  │   │
 │  │  │    - Conversation browser                                       │  │   │
+│  │  │    - Search interface                                           │  │   │
 │  │  └────────────────────────────────────────────────────────────────┘  │   │
 │  └──────────────────────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -102,7 +108,7 @@ AMP (Automated Memory Persistence) is an "infinite context window" system for AI
 
 ### 1. Memory Hierarchy
 ```
-DOM (9 slots) → Hot Memory (5x1MB slots) → Desktop SQLite (Cold Storage)
+DOM (9 slots) → Hot Memory (5x1MB slots) → Native Host SQLite (Cold Storage)
      ↑                    ↑                        ↑
   30 min TTL          24 hour TTL              Permanent
 ```
@@ -119,13 +125,13 @@ Each conversation chunk progresses through 9 stages:
 
 ### 4. Hot Pool Architecture
 ```javascript
-// 5x1MB cascading slots
+// 5x1MB cascading slots (adaptive based on system RAM)
 this.slots = [
   { id: 1, maxSize: 1MB, chunks: Map() }, // Newest data
   { id: 2, maxSize: 1MB, chunks: Map() }, // ↓
   { id: 3, maxSize: 1MB, chunks: Map() }, // ↓
   { id: 4, maxSize: 1MB, chunks: Map() }, // ↓
-  { id: 5, maxSize: 1MB, chunks: Map() }  // Oldest data → overflow to desktop
+  { id: 5, maxSize: 1MB, chunks: Map() }  // Oldest data → overflow to native host
 ];
 
 // Unified view for quick access
@@ -134,32 +140,111 @@ this.hotPool = new Map(); // chunk_id → chunk
 
 ## Communication Protocol
 
-### Extension → Desktop (HTTP)
-```
-Port: 3000
-Host: 127.0.0.1
-
-Endpoints:
-  GET  /ping          → { type: 'pong', timestamp }
-  GET  /status        → { connected, storageAvailable, stats }
-  GET  /conversations → { conversations: [...] }
-  GET  /chunks?id=X   → { chunks: [...] }
-  GET  /search?q=X    → { results: [...] }
-  GET  /recent        → { activity: [...] }
-  GET  /all-memory    → { data: { conversations, chunks, stats } }
-  POST /              → { type: 'store_data', data: {...} }
-```
-
-### Message Types (POST)
+### Native Messaging Setup
 ```javascript
-// Store memory chunk
-{ type: 'store_data', data: { content, provider, topic, timestamp } }
+// Extension side (background.js)
+const NATIVE_HOST_NAME = 'com.ampiq.amp.native';
+let nativePort = null;
 
-// Send all memory (bulk)
-{ type: 'sendAllMemory', chunks: [...] }
+function connectToNativeHost() {
+  nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
+  
+  nativePort.onMessage.addListener((message) => {
+    handleNativeMessage(message);
+  });
+  
+  nativePort.onDisconnect.addListener(() => {
+    // Handle disconnect, attempt reconnect
+    setTimeout(() => connectToNativeHost(), 5000);
+  });
+}
+```
 
-// Query data
-{ type: 'get_data', query: { conversation_id, search, recent, stats } }
+### Message Types
+
+#### Extension → Native Host
+```javascript
+// Ping (connection test)
+{ type: 'ping', requestId: 'req_1_timestamp' }
+
+// Store overflow chunk
+{ type: 'overflow', chunk: { id, content, provider, ... }, requestId: '...' }
+
+// Send all memory (bulk cascade)
+{ type: 'sendAllMemory', chunks: [...], timestamp: Date.now() }
+
+// Cascade memory to desktop
+{ type: 'cascadeMemory', chunks: [...], timestamp: Date.now() }
+
+// Get memory stats
+{ type: 'getMemoryStats', requestId: '...' }
+
+// Search memory
+{ type: 'search_memory', query: 'search term', requestId: '...' }
+
+// Get memory data
+{ type: 'get_memory_data', requestId: '...' }
+
+// Get status
+{ type: 'status', requestId: '...' }
+```
+
+#### Native Host → Extension
+```javascript
+// Pong (connection confirmed)
+{ type: 'pong', time: Date.now(), requestId: '...' }
+
+// Overflow saved
+{ type: 'overflow_saved', success: true, chunkId: '...', sqliteStored: true, fileStored: true }
+
+// All memory saved
+{ type: 'all_memory_saved', success: true, sqliteCount: 10, chunkCount: 10, stats: {...} }
+
+// Cascade complete
+{ type: 'cascade_complete', success: true, sqliteCount: 10, stats: {...} }
+
+// Memory stats
+{ type: 'getMemoryStats', success: true, stats: {...} }
+
+// Search results
+{ type: 'search_results', query: '...', results: [...] }
+
+// Memory data response
+{ type: 'memory_data_response', data: [...], count: 10 }
+
+// Status response
+{ type: 'status_response', success: true, online: true, storageDir: '...' }
+
+// Error
+{ type: 'error', error: 'Error message', requestId: '...' }
+```
+
+### Native Messaging Wire Protocol
+```javascript
+// Native host receives messages via stdin with 4-byte length prefix
+process.stdin.on('data', (data) => {
+  messageBuffer = Buffer.concat([messageBuffer, data]);
+  
+  while (messageBuffer.length >= 4) {
+    const msgLen = messageBuffer.readUInt32LE(0);
+    if (messageBuffer.length < 4 + msgLen) break;
+    
+    const msgData = messageBuffer.slice(4, 4 + msgLen);
+    messageBuffer = messageBuffer.slice(4 + msgLen);
+    
+    const message = JSON.parse(msgData.toString());
+    handleMessage(message);
+  }
+});
+
+// Native host sends messages via stdout with 4-byte length prefix
+function writeMessage(msg) {
+  const json = JSON.stringify(msg);
+  const buffer = Buffer.alloc(4 + Buffer.byteLength(json));
+  buffer.writeUInt32LE(Buffer.byteLength(json), 0);
+  buffer.write(json, 4);
+  fs.writeSync(1, buffer); // stdout
+}
 ```
 
 ## Key Files
@@ -167,17 +252,19 @@ Endpoints:
 ### Extension (`ext/`)
 | File | Purpose |
 |------|---------|
-| `background.js` | Service worker - memory management, HTTP client |
-| `content.js` | DOM injection - captures AI conversations |
-| `utils.js` | MemoryPool class, encryption, helpers |
-| `dropdown.js` | Popup UI - stats display |
+| `background.js` | Service worker - memory management, Native Messaging client |
+| `content.js` | DOM injection - captures AI conversations, context injection |
+| `utils.js` | MemoryPool class, encryption, S1-S9 progression, dual zipper |
+| `dropdown.js` | Popup UI - stats display, connection status |
+| `license.js` | License management and feature gating |
 | `amp-ui.js` | 3D zipper visualization |
 
 ### Desktop (`desktop-ui/`)
 | File | Purpose |
 |------|---------|
-| `main.js` | Electron main process - HTTP server |
-| `sqlite-storage.js` | SQLite database management |
+| `amp-native-host.js` | Native Messaging host - bridge to SQLite |
+| `main.js` | Electron main process - desktop GUI |
+| `sqlite-storage.js` | SQLite database management with FTS5 |
 | `renderer.js` | Desktop UI |
 | `preload.js` | IPC bridge |
 
@@ -212,28 +299,46 @@ async addToSlot(chunk) {
   this.hotPool.set(chunk.id, chunk); // CRITICAL: unified view
 }
 
-// When overflowing to desktop, remove from hotPool
-async moveOldestToNextSlot(currentSlot, nextSlot) {
-  if (overflowing) {
-    await this.sendToDesktopOverflow(oldestChunk);
-    this.hotPool.delete(oldestChunk.id); // CRITICAL: cleanup
-  }
+// When overflowing to native host, remove from hotPool
+async sendToDesktopOverflow(chunk) {
+  await chrome.runtime.sendMessage({
+    action: 'sendToDesktop',
+    type: 'overflow',
+    chunk: chunk
+  });
+  this.hotPool.delete(chunk.id); // CRITICAL: cleanup
 }
 ```
 
-### 3. Desktop Query (background.js)
+### 3. Native Messaging Connection (background.js)
 ```javascript
-// Query desktop for cold storage data
-case 'getMemoryData':
-  // Get hot pool data
-  const hotData = Array.from(activeMemoryPool.hotPool.values());
+// Connect to native messaging host
+function connectToNativeHost() {
+  nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
   
-  // Also query desktop for cold storage
-  const desktopResponse = await fetch('http://127.0.0.1:3000/all-memory');
-  const coldData = await desktopResponse.json();
-  
-  // Merge and return
-  sendResponse({ data: [...hotData, ...coldData.chunks] });
+  // Send ping to verify connection
+  sendNativeMessage({ type: 'ping' }).then(() => {
+    updateConnectionStatus(true);
+  }).catch((error) => {
+    updateConnectionStatus(false);
+  });
+}
+
+// Send message with response tracking
+function sendNativeMessage(message) {
+  return new Promise((resolve, reject) => {
+    const requestId = `req_${++messageIdCounter}_${Date.now()}`;
+    const messageWithId = { ...message, requestId };
+    
+    const timeout = setTimeout(() => {
+      pendingResponses.delete(requestId);
+      reject(new Error(`Native message timeout: ${message.type}`));
+    }, 10000);
+    
+    pendingResponses.set(requestId, { resolve, reject, timeout });
+    nativePort.postMessage(messageWithId);
+  });
+}
 ```
 
 ## STRICT DEVELOPMENT RULES
@@ -253,47 +358,48 @@ case 'getMemoryData':
 - **IDENTIFY the actual error** from terminal logs
 - **IGNORE unrelated errors** (like cache errors)
 
-### 4. PORT RULES
-- **Extension connects to**: `http://127.0.0.1:3000`
-- **Desktop listens on**: `port 3000`
-- **NEVER use**: port 3456 (old incorrect value)
+### 4. NATIVE MESSAGING RULES
+- **Host Name**: `com.ampiq.amp.native`
+- **Protocol**: stdin/stdout with 4-byte length prefix
+- **Extension connects via**: `chrome.runtime.connectNative()`
+- **NEVER use HTTP/ports** for extension-desktop communication
 
 ### 5. SQLITE RULES
 - **ALWAYS rebuild** better-sqlite3 when version mismatch
 - **USE desktop-ui directory** for rebuilds
-- **IGNORE SQLite errors** if HTTP server starts successfully
+- **Database location**: `~/.ampiq/AMP/memory.db`
 
 ### 6. CONNECTION TESTING RULES
 - **OPEN extension dropdown** to trigger connection
-- **CHECK terminal** for connection messages
-- **VERIFY desktop app** shows "Connected"
+- **CHECK background console** for connection messages
+- **VERIFY ring animation** shows green (connected)
 - **TEST stats display** in extension
 
 ### 7. DEBUG LOGGING
-- **Look for 🔧 messages** in terminal
-- **Trace the flow**: Extension → HTTP → Desktop → SQLite
+- **Look for 🔧 messages** in console
+- **Trace the flow**: Extension → Native Messaging → Native Host → SQLite
 - **Verify each step** before moving to next
 
 ## Error Priority
-1. **Port conflicts** (EADDRINUSE) - kill existing process
+1. **Native host not found** - check registration and path
 2. **SQLite version mismatch** (ERR_DLOPEN_FAILED) - rebuild
-3. **Connection issues** (no HTTP messages) - check port
+3. **Connection issues** (no pong response) - check native host
 4. **UI display issues** (stats not showing) - check handlers
 
 ## Success Criteria
-- ✅ Terminal shows: "HTTP server started successfully"
-- ✅ Extension connects: "Received ping request"
-- ✅ Desktop shows: "Connected" status
+- ✅ Extension icon shows: Rainbow ring animation
+- ✅ Extension connects: Green ring state
+- ✅ Background logs: "Native messaging connection established"
 - ✅ Stats display: Real numbers in extension dropdown
 - ✅ Memory persists: Data survives browser restart
 
 ## Testing Workflow
-1. Start desktop app: `cd desktop-ui && npm start`
-2. Verify: "HTTP server running on http://127.0.0.1:3000"
-3. Reload extension in chrome://extensions/
-4. Open extension dropdown
-5. Check terminal for "Received ping request"
-6. Verify stats show real data (not zeros)
-7. Open AI chat, send message
-8. Check terminal for "store_data" message
-9. Verify chunk count increases
+1. Load extension in chrome://extensions/
+2. Open extension dropdown
+3. Check background console (Service Worker "Inspect")
+4. Look for "✅ Native messaging connection established"
+5. Verify stats show real data (not zeros)
+6. Open AI chat, send message
+7. Check native host logs for "overflow" or "sendAllMemory" messages
+8. Verify chunk count increases
+9. Check SQLite database has data

@@ -39,8 +39,8 @@ Optionally install the desktop app for persistent local storage
 TECHNICAL DETAILS
 Manifest V3 compliant
 Minimal memory footprint with adaptive resource management
-Native messaging support for desktop application communication
-No external network requests for data storage
+Native Messaging for secure desktop application communication (no HTTP/ports)
+All data stored locally - no external network requests
 PERMISSIONS EXPLAINED
 Storage: Save captured conversation data locally
 Tabs: Detect when you're on supported AI platforms
@@ -227,9 +227,9 @@ Works with ChatGPT, Claude, Gemini & more
 
 ### Support/Contact
 
-**Website:** [Your website]
-**GitHub:** [Your repo]
-**Email:** support@ampiq.com
+**Website:** https://ampiq.ai
+**GitHub:** https://github.com/AMPLIFAIUI/A.M.P
+**Email:** support@ampiq.ai
 
 ---
 

@@ -3,10 +3,11 @@
 // Dual Zipper Memory System Implementation
 // Version: 4.0.0 - Production
 
-// Production logging - set to false to disable debug logs
-const AMP_DEBUG = false;
-const log = (...args) => AMP_DEBUG && console.log('[AMP Utils]', ...args);
-const logError = (...args) => console.error('[AMP Utils]', ...args);
+// Production logging - uses global AMP_DEBUG if available (set by background.js)
+// Falls back to false if not defined (when loaded standalone)
+const _AMP_DEBUG_UTILS = (typeof AMP_DEBUG !== 'undefined') ? AMP_DEBUG : false;
+const logUtils = (...args) => _AMP_DEBUG_UTILS && console.log('[AMP Utils]', ...args);
+const logUtilsError = (...args) => console.error('[AMP Utils]', ...args);
 
 // IMPORTANT: Detect if we're in a Service Worker (no window object)
 const isServiceWorker = typeof window === 'undefined';

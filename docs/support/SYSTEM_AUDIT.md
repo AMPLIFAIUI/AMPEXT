@@ -39,10 +39,10 @@ The AMP (Auto Memory Persistence) system is a sophisticated Chrome extension + E
 - **Purpose**: Secure communication between extension and desktop
 - **Protocol**: Native messaging with JSON encoding
 
-#### 4. **Server Component (server/)**
-- **Framework**: Express.js
-- **Size**: 10 files, ~50KB total
-- **Purpose**: Optional HTTP server for enterprise deployment
+#### 4. **Server Component (server/)** - DEPRECATED
+- **Status**: Not used in current architecture
+- **Note**: The system uses Native Messaging for extension-desktop communication
+- **Purpose**: Legacy component, may be removed in future versions
 
 ## 🔍 Detailed Component Analysis
 
@@ -178,14 +178,15 @@ The AMP (Auto Memory Persistence) system is a sophisticated Chrome extension + E
 }
 ```
 
-### **Server Configuration**
+### **Storage Configuration**
 ```json
 {
-  "server": {"port": 3456, "host": "0.0.0.0"},
+  "database": {"path": "~/.ampiq/AMP/memory.db"},
   "encryption": {"algorithm": "aes-256-gcm", "keyLength": 256},
-  "vault": {"path": "./data/db", "hotSlots": 4, "maxSlots": 9}
+  "memoryPool": {"hotSlots": 5, "slotSize": "1MB", "maxSlots": 5}
 }
 ```
+**Note**: No HTTP server is used. Communication is via Native Messaging (stdin/stdout).
 
 ## 🛡️ Security Assessment
 

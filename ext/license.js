@@ -1,9 +1,10 @@
 // AMP License Validation Module
 // Version 4.0.0
 
-const AMP_DEBUG = false;
-const log = (...args) => AMP_DEBUG && console.log('[AMP License]', ...args);
-const logError = (...args) => console.error('[AMP License]', ...args);
+// Production logging - uses global AMP_DEBUG if available (set by background.js)
+const _AMP_DEBUG_LICENSE = (typeof AMP_DEBUG !== 'undefined') ? AMP_DEBUG : false;
+const logLicense = (...args) => _AMP_DEBUG_LICENSE && console.log('[AMP License]', ...args);
+const logLicenseError = (...args) => console.error('[AMP License]', ...args);
 
 // API endpoint for license validation
 const LICENSE_API_URL = 'https://amp-license-api.vercel.app';

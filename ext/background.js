@@ -3,15 +3,17 @@
 // Hot Memory Priority - minimal storage, maximum performance
 // Version: 4.0.0 - Production
 
-// IMPORTANT: importScripts MUST be at the very top, synchronously, before any other code
+// Production logging - MUST be declared before importScripts
+const AMP_DEBUG = false;
+
+// IMPORTANT: importScripts MUST be near the top, synchronously
 // This is a Chrome Service Worker requirement
 importScripts('utils.js');
 importScripts('license.js');
 
-// Production logging - set to false to disable debug logs
-const AMP_DEBUG = false;
-const log = (...args) => AMP_DEBUG && console.log('[AMP Background]', ...args);
-const logError = (...args) => console.error('[AMP Background]', ...args);
+// Background-specific logging (utils.js and license.js have their own)
+const logBg = (...args) => AMP_DEBUG && console.log('[AMP Background]', ...args);
+const logBgError = (...args) => console.error('[AMP Background]', ...args);
 
 // ADAPTIVE PERFORMANCE CONFIGURATION
 // Detects system capabilities and adjusts accordingly

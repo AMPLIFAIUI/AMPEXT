@@ -17,7 +17,7 @@ cd A.M.P
 npm install
 ```
 
-#### 2. **Build Extension**
+#### 2. **Build Desktop App**
 
 ```bash
 cd desktop-ui
@@ -25,26 +25,64 @@ npm install
 npm run build
 ```
 
-#### 3. **Install Native Host**
+#### 3. **Register Native Messaging Host**
 
+The native messaging host must be registered with Chrome to enable communication between the extension and the native host.
+
+##### Windows
+
+**Option A: Registry (Recommended)**
+Create a registry key at:
+```
+HKEY_CURRENT_USER\Software\Google\Chrome\NativeMessagingHosts\com.ampiq.amp.native
+```
+Set the default value to the full path of `com.ampiq.amp.native.json`
+
+**Option B: JSON File**
+Copy `com.ampiq.amp.native.json` to:
+```
+%APPDATA%\Google\Chrome\User Data\NativeMessagingHosts\
+```
+
+##### macOS
 ```bash
-# Windows
-copy com.ampiq.amp.native.json "%APPDATA%\Google\Chrome\User Data\NativeMessagingHosts\"
-
-# macOS
 cp com.ampiq.amp.native.json ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/
+```
 
-# Linux
+##### Linux
+```bash
 cp com.ampiq.amp.native.json ~/.config/google-chrome/NativeMessagingHosts/
 ```
 
-#### 4. **Load Extension**
+#### 4. **Configure Native Host Manifest**
+
+Edit `com.ampiq.amp.native.json` to point to your installation:
+
+```json
+{
+  "name": "com.ampiq.amp.native",
+  "description": "AMP Native Messaging Host",
+  "path": "C:\\path\\to\\desktop-ui\\amp-native-host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://YOUR_EXTENSION_ID_HERE/"
+  ]
+}
+```
+
+**⚠️ Important**: 
+- Replace the `path` with the actual path to `amp-native-host.bat` (Windows) or `amp-native-host.js` (macOS/Linux)
+- Replace `YOUR_EXTENSION_ID_HERE` with your extension's ID from `chrome://extensions/`
+- On Windows, use the `.bat` wrapper; on macOS/Linux, use the `.js` file directly with `#!/usr/bin/env node`
+
+#### 5. **Load Extension**
 1. Open Chrome → `chrome://extensions/`
 2. Enable "Developer mode"
 3. Click "Load unpacked"
 4. Select `ext/` folder
+5. Note the Extension ID for the native host manifest
 
-#### 5. **Start Desktop App**
+#### 6. **Start Desktop App (Optional)**
 
 ```bash
 cd desktop-ui
@@ -60,60 +98,74 @@ npm start
 ```json
 {
   "manifest_version": 3,
-  "name": "AMPiQ - Auto Memory Persistence",
+  "name": "AMP - Auto Memory Persistence",
   "version": "4.0.0",
-  "description": "Infinite context memory for AI conversations",
+  "description": "Infinite context memory system for AI conversations",
   "permissions": [
     "storage",
-    "activeTab", 
+    "activeTab",
     "tabs",
     "scripting",
-    "unlimitedStorage"
+    "unlimitedStorage",
+    "windows",
+    "nativeMessaging",
+    "notifications"
   ],
-  "host_permissions": ["<all_urls>"],
+  "host_permissions": [
+    "https://chat.openai.com/*",
+    "https://chatgpt.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://perplexity.ai/*",
+    "https://poe.com/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [{
-    "matches": ["<all_urls>"],
+    "matches": ["<supported_ai_sites>"],
     "js": ["utils.js", "content.js"],
     "run_at": "document_start"
   }],
   "action": {
-    "default_popup": "popup.html",
-    "default_icon": {
-      "16": "icon32.png",
-      "32": "icon32.png", 
-      "48": "icon48.png",
-      "128": "icon128.png"
-    }
-  },
-  "icons": {
-    "16": "icon32.png",
-    "32": "icon32.png",
-    "48": "icon48.png",
-    "128": "icon128.png"
+    "default_popup": "dropdown.html",
+    "default_title": "AMP Memory",
+    "default_icon": "icon48.png"
   }
 }
 ```
 
-#### **Native Messaging Configuration**
+#### **Native Messaging Host Configuration**
 
-**com.ampiq.amp.native.json**
+**com.ampiq.amp.native.json** (Windows example)
 
 ```json
 {
   "name": "com.ampiq.amp.native",
-  "description": "AMPiQ Native Messaging Host",
-  "path": "/absolute/path/to/amp-native-host.js",
+  "description": "AMP Native Messaging Host - Bridge to SQLite storage",
+  "path": "C:\\Users\\YourUser\\AMP\\desktop-ui\\amp-native-host.bat",
   "type": "stdio",
   "allowed_origins": [
-    "chrome-extension://YOUR_EXTENSION_ID_HERE"
+    "chrome-extension://your-extension-id-here/"
   ]
 }
 ```
 
-**⚠️ Important**: Replace the path and extension ID with your actual values.
+**com.ampiq.amp.native.json** (macOS/Linux example)
+
+```json
+{
+  "name": "com.ampiq.amp.native",
+  "description": "AMP Native Messaging Host - Bridge to SQLite storage",
+  "path": "/home/user/AMP/desktop-ui/amp-native-host.js",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://your-extension-id-here/"
+  ]
+}
+```
+
+**⚠️ Important**: The `path` must be an absolute path to the native host executable.
 
 ### **Desktop App Configuration**
 
@@ -156,39 +208,6 @@ npm start
 }
 ```
 
-### **Server Configuration** (Optional)
-
-#### **config.json** (server/config.json)
-
-```json
-{
-  "server": {
-    "port": 3456,
-    "host": "0.0.0.0"
-  },
-  "rateLimit": {
-    "maxRequests": 100
-  },
-  "license": {
-    "customerId": "your-customer-id",
-    "secret": "your-hmac-secret"
-  },
-  "vault": {
-    "path": "./data/db",
-    "hotSlots": 4,
-    "maxSlots": 9,
-    "chunkMaxSize": 2048
-  },
-  "encryption": {
-    "algorithm": "aes-256-gcm",
-    "keyLength": 256,
-    "salt": "your-salt-here",
-    "key": "your-encryption-key-here",
-    "password": "your-password-here"
-  }
-}
-```
-
 ## 🏗️ Production Deployment
 
 ### **Environment Setup**
@@ -206,10 +225,6 @@ AMP_CUSTOMER_ID=your-customer-id
 # Database Configuration
 AMP_DB_PATH=/path/to/database
 AMP_STORAGE_PATH=/path/to/storage
-
-# Server Configuration (if using)
-AMP_SERVER_PORT=3456
-AMP_SERVER_HOST=0.0.0.0
 ```
 
 #### **2. Security Configuration**
@@ -222,20 +237,18 @@ openssl rand -hex 16  # For salt
 
 #### **3. Database Setup**
 
-```bash
-# Create storage directories
-mkdir -p ~/.ampiq/storage/overflow
-mkdir -p ~/.ampiq/storage/all-memory
-mkdir -p ~/.ampiq/storage/database
-```
+The SQLite database is automatically created at:
+- **Windows**: `%USERPROFILE%\.ampiq\AMP\memory.db`
+- **macOS/Linux**: `~/.ampiq/AMP/memory.db`
 
 ### **Build Process**
 
 #### **1. Extension Build**
 
 ```bash
-cd client
+cd ext
 # No build step needed - load unpacked in Chrome
+# For production, create a .crx or submit to Chrome Web Store
 ```
 
 #### **2. Desktop App Build**
@@ -247,19 +260,18 @@ npm run build
 
 #### **3. Native Host Setup**
 
+##### Windows
+```batch
+@echo off
+REM amp-native-host.bat - Windows wrapper for native host
+node "%~dp0amp-native-host.js"
+```
+
+##### macOS/Linux
 ```bash
-# Make native host executable
+#!/usr/bin/env node
+# amp-native-host.js should have this shebang and be executable
 chmod +x amp-native-host.js
-
-# Install native messaging host
-# Windows
-copy com.ampiq.amp.native.json "%APPDATA%\Google\Chrome\User Data\NativeMessagingHosts\"
-
-# macOS  
-cp com.ampiq.amp.native.json ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/
-
-# Linux
-cp com.ampiq.amp.native.json ~/.config/google-chrome/NativeMessagingHosts/
 ```
 
 ### **Installation Scripts**
@@ -273,8 +285,11 @@ echo Installing AMP System...
 REM Create directories
 mkdir "%APPDATA%\Google\Chrome\User Data\NativeMessagingHosts" 2>nul
 
-REM Copy native messaging host
+REM Copy native messaging host manifest
 copy com.ampiq.amp.native.json "%APPDATA%\Google\Chrome\User Data\NativeMessagingHosts\"
+
+REM Update manifest with correct path
+powershell -Command "(Get-Content '%APPDATA%\Google\Chrome\User Data\NativeMessagingHosts\com.ampiq.amp.native.json') -replace 'PATH_TO_HOST', '%CD%\desktop-ui\amp-native-host.bat' | Set-Content '%APPDATA%\Google\Chrome\User Data\NativeMessagingHosts\com.ampiq.amp.native.json'"
 
 REM Build desktop app
 cd desktop-ui
@@ -282,6 +297,8 @@ npm install
 npm run build
 
 echo Installation complete!
+echo.
+echo IMPORTANT: Update the extension ID in the native host manifest!
 pause
 ```
 
@@ -295,9 +312,19 @@ echo "Installing AMP System..."
 mkdir -p ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts 2>/dev/null
 mkdir -p ~/.config/google-chrome/NativeMessagingHosts 2>/dev/null
 
-# Copy native messaging host
-cp com.ampiq.amp.native.json ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/ 2>/dev/null
-cp com.ampiq.amp.native.json ~/.config/google-chrome/NativeMessagingHosts/ 2>/dev/null
+# Make native host executable
+chmod +x desktop-ui/amp-native-host.js
+
+# Copy native messaging host manifest (detect OS)
+if [[ "$OSTYPE" == "darwin"* ]]; then
+  cp com.ampiq.amp.native.json ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/
+  # Update path in manifest
+  sed -i '' "s|PATH_TO_HOST|$(pwd)/desktop-ui/amp-native-host.js|g" ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.ampiq.amp.native.json
+else
+  cp com.ampiq.amp.native.json ~/.config/google-chrome/NativeMessagingHosts/
+  # Update path in manifest
+  sed -i "s|PATH_TO_HOST|$(pwd)/desktop-ui/amp-native-host.js|g" ~/.config/google-chrome/NativeMessagingHosts/com.ampiq.amp.native.json
+fi
 
 # Build desktop app
 cd desktop-ui
@@ -305,6 +332,8 @@ npm install
 npm run build
 
 echo "Installation complete!"
+echo ""
+echo "IMPORTANT: Update the extension ID in the native host manifest!"
 ```
 
 ## 🔒 Security Deployment
@@ -321,47 +350,25 @@ echo "Encryption Key: $ENCRYPTION_KEY"
 # Generate salt
 SALT=$(openssl rand -hex 16)
 echo "Salt: $SALT"
-
-# Generate HMAC secret
-HMAC_SECRET=$(openssl rand -hex 32)
-echo "HMAC Secret: $HMAC_SECRET"
 ```
 
-#### **2. Update Configuration**
+#### **2. Key Storage**
 
-```json
-{
-  "encryption": {
-    "algorithm": "aes-256-gcm",
-    "keyLength": 256,
-    "salt": "GENERATED_SALT_HERE",
-    "key": "GENERATED_KEY_HERE",
-    "password": "STRONG_PASSWORD_HERE"
-  }
-}
-```
+Keys are generated per-session in the extension and rotated every 10 minutes for maximum security. No persistent key storage is required.
 
 ### **Access Control**
 
-#### **1. User Authentication** (Optional)
+#### **1. Native Messaging Security**
 
-```javascript
-// Add to main.js for desktop app
-const { session } = require('electron');
-
-// Require authentication
-session.defaultSession.on('will-navigate', (event, navigationUrl) => {
-  if (!isAuthenticated()) {
-    event.preventDefault();
-    showLoginDialog();
-  }
-});
-```
+Native messaging is inherently secure:
+- Only the specified extension ID can connect
+- Communication is local (stdin/stdout)
+- No network exposure
 
 #### **2. Network Security**
 
 ```javascript
-// Disable remote content
+// Desktop app security settings
 webPreferences: {
   nodeIntegration: false,
   contextIsolation: true,
@@ -378,52 +385,46 @@ webPreferences: {
 #### **1. Extension Logging**
 
 ```javascript
-// Add to background.js
-const LOG_LEVEL = 'INFO'; // DEBUG, INFO, WARN, ERROR
+// Set AMP_DEBUG to true for verbose logging
+const AMP_DEBUG = false; // Set to true for debugging
 
-function log(level, message, data = {}) {
-  if (LOG_LEVEL === 'DEBUG' || level === 'ERROR') {
-    console.log(`[AMP ${level}] ${message}`, data);
-  }
-}
+const log = (...args) => AMP_DEBUG && console.log('[AMP]', ...args);
+const logError = (...args) => console.error('[AMP]', ...args);
 ```
 
-#### **2. Desktop App Logging**
+#### **2. Native Host Logging**
 
 ```javascript
-// Add to main.js
-const log = require('electron-log');
+// Native host logs to stderr (doesn't interfere with native messaging)
+const log = (...args) => AMP_DEBUG && console.error('[AMP Host]', ...args);
+```
 
-log.transports.file.level = 'info';
-log.transports.file.maxSize = 1024 * 1024; // 1MB
-log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}.{ms}] [{level}] {text}';
+#### **3. Desktop App Logging**
+
+```javascript
+// Electron main process logging
+const log = (...args) => AMP_DEBUG && console.log('[AMP Main]', ...args);
 ```
 
 ### **Health Monitoring**
 
 #### **1. System Health Check**
 
+The extension performs periodic health checks:
+- Native messaging connection status
+- Memory pool integrity
+- Storage state validation
+
 ```javascript
-// Add health monitoring
+// Health check interval (60 seconds)
 setInterval(async () => {
-  const health = await checkSystemHealth();
-  if (!health.healthy) {
-    log.error('System health check failed:', health);
-    // Trigger recovery procedures
+  if (activeMemoryPool && activeMemoryPool.getSystemHealth) {
+    const health = activeMemoryPool.getSystemHealth();
+    if (health.errorCount > 10) {
+      await activeMemoryPool.attemptRecovery();
+    }
   }
-}, 60000); // Check every minute
-```
-
-#### **2. Performance Monitoring**
-
-```javascript
-// Monitor memory usage
-setInterval(() => {
-  const stats = memoryPool.getStats();
-  if (stats.hotMemorySize > 10 * 1024 * 1024) { // 10MB
-    log.warn('High memory usage detected:', stats);
-  }
-}, 30000); // Check every 30 seconds
+}, 60000);
 ```
 
 ## 🚨 Troubleshooting
@@ -433,20 +434,24 @@ setInterval(() => {
 #### **1. Native Messaging Not Working**
 
 ```bash
-# Check native host installation
-ls ~/.config/google-chrome/NativeMessagingHosts/
+# Check native host registration (Windows)
+reg query "HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ampiq.amp.native"
+
+# Check manifest file exists
+ls ~/.config/google-chrome/NativeMessagingHosts/com.ampiq.amp.native.json
+
+# Verify manifest contents
 cat ~/.config/google-chrome/NativeMessagingHosts/com.ampiq.amp.native.json
 
-# Verify extension ID
-chrome://extensions/ # Get extension ID
-# Update com.ampiq.amp.native.json with correct ID
+# Check extension ID matches
+# Go to chrome://extensions/ and verify the ID
 ```
 
 #### **2. Extension Not Loading**
 
 ```bash
 # Check manifest.json syntax
-cd client
+cd ext
 node -e "console.log(JSON.parse(require('fs').readFileSync('manifest.json')))"
 
 # Check for missing files
@@ -470,13 +475,16 @@ DEBUG=* npm start
 #### **4. Database Issues**
 
 ```bash
-# Check SQLite database
-cd desktop-ui
-sqlite3 ~/.config/AMP/memory.db ".tables"
+# Check SQLite database location
+ls ~/.ampiq/AMP/memory.db
+
+# Query database
+sqlite3 ~/.ampiq/AMP/memory.db ".tables"
+sqlite3 ~/.ampiq/AMP/memory.db "SELECT COUNT(*) FROM memory_chunks"
 
 # Reset database if corrupted
-rm ~/.config/AMP/memory.db
-# Restart desktop app
+rm ~/.ampiq/AMP/memory.db
+# Restart native host/desktop app to recreate
 ```
 
 ### **Debug Mode**
@@ -484,57 +492,54 @@ rm ~/.config/AMP/memory.db
 #### **1. Extension Debug**
 
 ```javascript
-// Add to background.js
-const DEBUG_MODE = true;
+// In background.js, set:
+const AMP_DEBUG = true;
 
-if (DEBUG_MODE) {
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('DEBUG: Received message:', message);
-    // ... rest of handler
-  });
-}
+// Then check Service Worker console:
+// chrome://extensions/ → AMP → "Service Worker" → Inspect
 ```
 
-#### **2. Desktop App Debug**
+#### **2. Native Host Debug**
 
 ```bash
-# Run with debug flags
+# Run native host manually to see output
 cd desktop-ui
-NODE_ENV=development DEBUG=* npm start
+node amp-native-host.js
+
+# Send test message (requires proper native messaging format)
 ```
 
 ## 📋 Deployment Checklist
 
 ### **Pre-Deployment**
 - [ ] Environment variables configured
-- [ ] Encryption keys generated and secured
-- [ ] Native messaging host installed
+- [ ] Native messaging host registered
+- [ ] Extension ID updated in native host manifest
 - [ ] Extension loaded in Chrome
-- [ ] Desktop app built and tested
-- [ ] Database directories created
-- [ ] Logging configured
+- [ ] Desktop app built (if using)
+- [ ] Database directory writable
+- [ ] Logging configured appropriately
 
 ### **Post-Deployment**
-- [ ] Extension connects to native host
-- [ ] Desktop app starts without errors
-- [ ] Memory capture working
+- [ ] Extension shows rainbow ring animation
+- [ ] Native messaging connection successful (green ring)
+- [ ] Memory capture working on AI sites
 - [ ] Context injection working
 - [ ] Search functionality working
-- [ ] Error logging working
-- [ ] Performance monitoring active
+- [ ] Stats display shows real data
+- [ ] Data persists across browser restarts
 
 ### **Security Verification**
-- [ ] Encryption keys not in plaintext
-- [ ] Native messaging secure
-- [ ] No network transmission
-- [ ] Local-only processing
-- [ ] User data protected
+- [ ] Native messaging manifest has correct extension ID
+- [ ] No sensitive data in logs
+- [ ] Database file permissions correct
+- [ ] No network transmission of data
 
 ## 🎯 Production Best Practices
 
 ### **1. Security**
-- Use environment variables for sensitive data
-- Rotate encryption keys regularly
+- Keep extension ID private
+- Rotate encryption keys (automatic)
 - Monitor for security events
 - Keep dependencies updated
 
@@ -554,8 +559,8 @@ NODE_ENV=development DEBUG=* npm start
 - Regular security updates
 - Performance monitoring
 - Log rotation and cleanup
-- Database maintenance
+- Database maintenance (VACUUM)
 
 ---
 
-**Deployment Summary**: Follow this guide for a secure, production-ready AMP system deployment with proper monitoring, logging, and maintenance procedures. 
+**Deployment Summary**: Follow this guide for a secure, production-ready AMP system deployment with Native Messaging communication, SQLite storage, and proper monitoring.
