@@ -129,9 +129,25 @@
       text-decoration: none;
     }
 
+    .logo-icon-container {
+      position: relative;
+      width: 56px;
+      height: 56px;
+    }
+
     .logo-icon {
       height: 56px;
       width: auto;
+    }
+
+    .logo-center-icon {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 38px;
+      height: 38px;
+      pointer-events: none;
     }
 
     .logo-text {
@@ -175,14 +191,14 @@
     /* Hero Background Image - scale to fill viewport */
     .hero-bg-img {
       position: absolute;
-      top: 0;
+      top: 70px;
       left: 0;
       right: 0;
       bottom: 0;
       width: 100%;
-      height: 100%;
+      height: calc(100% - 70px);
       object-fit: cover;
-      object-position: center;
+      object-position: center top;
       z-index: 0;
     }
 
@@ -194,14 +210,14 @@
       left: 0;
       right: 0;
       bottom: 0;
-      background: rgba(66, 65, 65, 0.041);
+      background: rgba(0, 0, 0, 0.123);
       z-index: 1;
     }
 
     /* Hero Text - Top (heading above center) */
     .hero-text-top {
       position: absolute;
-      top: 15%;
+      top: 35%;
       left: 50%;
       transform: translateX(-50%);
       z-index: 2;
@@ -237,10 +253,10 @@
 
     .hero-tagline {
       font-size: 1.5rem;
-      color: var(--text-primary);
+      color: #ffffff;
       margin-bottom: 1rem;
       font-weight: 500;
-      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.8);
+      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.4);
     }
 
     .hero h1 {
@@ -249,7 +265,8 @@
       line-height: 1.1;
       margin-bottom: 1.5rem;
       letter-spacing: -1px;
-      text-shadow: 0 4px 30px rgba(0, 0, 0, 0.9);
+      color: #ffffff;
+      text-shadow: 0 0 20px rgba(255, 255, 255, 0.5), 0 4px 30px rgba(0, 0, 0, 0.9);
     }
 
     .hero h1 .gradient {
@@ -257,15 +274,15 @@
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
-      filter: drop-shadow(0 4px 20px rgba(0, 212, 170, 0.5));
+      filter: drop-shadow(0 0 25px rgba(0, 212, 170, 0.8)) drop-shadow(0 4px 20px rgba(0, 212, 170, 0.6));
     }
 
     .hero-subtitle {
       font-size: 1.35rem;
-      color: var(--text-primary);
+      color: #ffffff;
       max-width: 700px;
       margin: 2.5rem auto 0;
-      text-shadow: 0 2px 20px rgba(0, 0, 0, 0.9);
+      text-shadow: 0 0 15px rgba(255, 255, 255, 0.4), 0 2px 20px rgba(0, 0, 0, 0.9);
       line-height: 1.6;
     }
 
@@ -348,25 +365,38 @@
     .features {
       padding: 6rem 2rem;
       position: relative;
-      background: url('assets/ampextpic.png') center center / cover no-repeat;
+      background: url('assets/ampnobgsvg.svg') center center / cover no-repeat;
+      background-color: var(--bg-secondary);
       overflow: hidden;
     }
 
+    /* Grid pattern overlay for features */
     .features::before {
       content: '';
       position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.7);
+      inset: 0;
+      background-image: 
+        linear-gradient(rgba(0, 212, 170, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 212, 170, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Dark overlay on features background */
+    .features::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
       z-index: 0;
     }
 
     .features > * {
       position: relative;
-      z-index: 1;
+      z-index: 2;
     }
+
 
     .features-grid {
       display: grid;
@@ -771,7 +801,7 @@
   <!-- Hero -->
   <section class="hero" id="home">
     <!-- Background Image -->
-    <img src="assets/ampnobgsvg.svg" alt="" class="hero-bg-img" aria-hidden="true">
+    <img src="assets/roundamp.svg" alt="" class="hero-bg-img" aria-hidden="true">
     
     <!-- Text Above Center - Heading & Subtitle -->
     <div class="hero-text-top">
