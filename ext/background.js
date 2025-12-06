@@ -15,6 +15,10 @@ importScripts('license.js');
 const logBg = (...args) => AMP_DEBUG && console.log('[AMP Background]', ...args);
 const logBgError = (...args) => console.error('[AMP Background]', ...args);
 
+// Alias for log() used throughout the file
+const log = logBg;
+const logError = logBgError;
+
 // ADAPTIVE PERFORMANCE CONFIGURATION
 // Detects system capabilities and adjusts accordingly
 const PERF_CONFIG = {
@@ -2922,12 +2926,12 @@ const frameSets = {
     'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png'
   ],
   
-  // 🌈 + 🔴 Red Spot: Warning/idle state
+  // 🔵 Blue Ring: Idle/waiting state (plain blue, no red)
   idle: [
-    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/error-1.png',
-    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png',
-    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/error-1.png',
-    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png'
+    'animated logo/idle-1.png', 'animated logo/idle-2.png', 'animated logo/idle-3.png', 'animated logo/idle-4.png',
+    'animated logo/idle-5.png', 'animated logo/idle-6.png', 'animated logo/idle-7.png', 'animated logo/idle-8.png',
+    'animated logo/idle-1.png', 'animated logo/idle-2.png', 'animated logo/idle-3.png', 'animated logo/idle-4.png',
+    'animated logo/idle-5.png', 'animated logo/idle-6.png', 'animated logo/idle-7.png', 'animated logo/idle-8.png'
   ],
   
   // 🌈 + 🔵 Blue Spot: Connected but not on AI site
@@ -3017,8 +3021,8 @@ function stopRingAnimation() {
   }
 }
 
-// Start with idle (grey) if not connected
-setRingState('idle');
+// Start with normal (rainbow) - will change based on connection status
+setRingState('normal');
 
 // Start the animation when the extension loads
 startRingAnimation();

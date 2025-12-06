@@ -1,0 +1,135 @@
+﻿
+> const frameSets = {
+    // ­ƒîê Pure Rainbow: Perfect state
+    normal: [
+      'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated 
+logo/normal-3.png', 'animated logo/normal-4.png',
+      'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated 
+logo/normal-7.png', 'animated logo/normal-8.png',
+      'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated 
+logo/normal-3.png', 'animated logo/normal-4.png',
+      'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated 
+logo/normal-7.png', 'animated logo/normal-8.png'
+    ],
+    
+    // ­ƒîê + ­ƒƒí Yellow Spot: Processing content
+    processing: [
+      'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated 
+logo/normal-3.png', 'animated logo/processing-1.png',
+      'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated 
+logo/normal-7.png', 'animated logo/normal-8.png',
+      'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated 
+logo/normal-3.png', 'animated logo/processing-1.png',
+      'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated 
+logo/normal-7.png', 'animated logo/normal-8.png'
+    ],
+    
+    // ­ƒîê + ­ƒö┤ Red Spot: Warning/idle state
+    idle: [
+      'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated 
+logo/normal-3.png', 'animated logo/error-1.png',
+      'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated 
+logo/normal-7.png', 'animated logo/normal-8.png',
+      'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated 
+logo/normal-3.png', 'animated logo/error-1.png',
+      'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated 
+logo/normal-7.png', 'animated logo/normal-8.png'
+    ],
+    
+    // ­ƒîê + ­ƒöÁ Blue Spot: Connected but not on AI site
+    'not-ai-site': [
+      'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated 
+logo/normal-3.png', 'animated logo/idle-1.png',
+      'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated 
+logo/normal-7.png', 'animated logo/normal-8.png',
+      'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated 
+logo/normal-3.png', 'animated logo/idle-1.png',
+      'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated 
+logo/normal-7.png', 'animated logo/normal-8.png'
+    ],
+    
+    // ­ƒîê + ­ƒƒá Orange Spot: Quick activity
+    'quick-activity': [
+      'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated 
+logo/normal-3.png', 'animated logo/processing-2.png',
+      'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated 
+logo/normal-7.png', 'animated logo/normal-8.png',
+      'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated 
+logo/normal-3.png', 'animated logo/processing-2.png',
+      'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated 
+logo/normal-7.png', 'animated logo/normal-8.png'
+    ],
+    
+    // ­ƒö┤ Solid Red: Error/crash state (Debug)
+    error: [
+      'animated logo/error-1.png', 'animated logo/error-2.png', 'animated 
+logo/error-3.png', 'animated logo/error-4.png',
+      'animated logo/error-5.png', 'animated logo/error-6.png', 'animated 
+logo/error-7.png', 'animated logo/error-8.png'
+    ],
+    
+    // ÔÜ¬ Solid Grey: No connection (Debug)
+    'no-connection': [
+      'animated logo/idle-1.png', 'animated logo/idle-2.png', 'animated 
+logo/idle-3.png', 'animated logo/idle-4.png',
+      'animated logo/idle-5.png', 'animated logo/idle-6.png', 'animated 
+logo/idle-7.png', 'animated logo/idle-8.png'
+> let ringFrames = frameSets.normal;
+  let ringFrameIndex = 0;
+  let ringAnimationInterval = null;
+  let currentRingState = 'normal';
+  
+  function setRingState(state) {
+    try {
+>     if (!frameSets[state]) state = 'normal';
+      if (currentRingState === state) return;
+      currentRingState = state;
+      stopRingAnimation();
+>     ringFrames = frameSets[state];
+      ringFrameIndex = 0;
+>     startRingAnimation();
+    } catch (error) {
+      console.warn('setRingState failed:', error);
+    }
+  }
+  
+> function startRingAnimation() {
+    try {
+      if (ringAnimationInterval) return;
+      ringAnimationInterval = setInterval(() => {
+        try {
+          if (chrome && chrome.action && chrome.action.setIcon) {
+            chrome.action.setIcon({
+              path: {
+>               16: ringFrames[ringFrameIndex],
+>               32: ringFrames[ringFrameIndex],
+>               48: ringFrames[ringFrameIndex],
+>               64: ringFrames[ringFrameIndex],
+>               128: ringFrames[ringFrameIndex],
+              }
+            });
+          }
+>         ringFrameIndex = (ringFrameIndex + 1) % ringFrames.length;
+        } catch (error) {
+          console.warn('Ring animation frame failed:', error);
+        }
+      }, 81); // 81ms = 12.35 FPS
+    } catch (error) {
+>     console.warn('startRingAnimation failed:', error);
+    }
+  }
+  
+  function stopRingAnimation() {
+    if (ringAnimationInterval) {
+      clearInterval(ringAnimationInterval);
+      ringAnimationInterval = null;
+    }
+  }
+  
+  // Start with idle (grey) if not connected
+  setRingState('idle');
+  
+  // Start the animation when the extension loads
+> startRingAnimation();
+
+

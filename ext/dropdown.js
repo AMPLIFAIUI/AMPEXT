@@ -951,6 +951,10 @@ function updateMemoryStatsFromBroadcast(stats) {
 // Enhanced notification system
 function showNotification(message, type = 'success') {
     const container = document.getElementById('notificationContainer');
+    if (!container) {
+        console.warn('Notification container not found');
+        return;
+    }
     const notification = document.createElement('div');
     notification.className = `notification ${type}`;
     notification.textContent = message;

@@ -9,6 +9,13 @@ const logLicenseError = (...args) => console.error('[AMP License]', ...args);
 // API endpoint for license validation
 const LICENSE_API_URL = 'https://amp-license-api.vercel.app';
 
+// Developer/Owner license keys (bypass API validation)
+const DEV_LICENSE_KEYS = [
+  'AMP-DEV-OWNER-2025',
+  'AMP-LIFETIME-OWNER',
+  'AMPIQ-MASTER-KEY-001'
+];
+
 // License state
 let licenseState = {
   isValid: false,
@@ -90,7 +97,7 @@ async function initializeLicense() {
         
         if (cacheAge < maxCacheAge && cached.isValid) {
           licenseState = { ...licenseState, ...cached };
-          log('Restored cached license state:', licenseState.plan);
+          logLicense('Restored cached license state:', licenseState.plan);
           
           // Validate in background
           validateLicenseAsync(stored.amp_license_key);
@@ -102,10 +109,10 @@ async function initializeLicense() {
       return await validateLicense(stored.amp_license_key);
     }
     
-    log('No license key found');
+    logLicense('No license key found');
     return licenseState;
   } catch (error) {
-    logError('Failed to initialize license:', error);
+    logLicenseError('Failed to initialize license:', error);
     return licenseState;
   }
 }
@@ -124,8 +131,32 @@ async function validateLicense(licenseKey) {
     return licenseState;
   }
   
+  // Check for developer/owner keys (bypass API)
+  const normalizedKey = licenseKey.trim().toUpperCase();
+  if (DEV_LICENSE_KEYS.includes(normalizedKey)) {
+    logLicense('Developer/Owner key detected - granting full access');
+    licenseState = {
+      isValid: true,
+      licenseKey: normalizedKey,
+      plan: 'complete_lifetime',
+      features: PLAN_FEATURES.complete_lifetime,
+      status: 'active',
+      lastChecked: Date.now(),
+      expiresAt: null // Never expires
+    };
+    
+    // Cache the state
+    await chrome.storage.local.set({
+      amp_license_key: normalizedKey,
+      amp_license_state: licenseState
+    });
+    
+    notifyLicenseChange();
+    return licenseState;
+  }
+  
   try {
-    log('Validating license:', licenseKey.substring(0, 8) + '...');
+    logLicense('Validating license:', licenseKey.substring(0, 8) + '...');
     
     const response = await fetch(`${LICENSE_API_URL}/api/validate`, {
       method: 'POST',
@@ -154,7 +185,7 @@ async function validateLicense(licenseKey) {
         amp_license_state: licenseState
       });
       
-      log('License validated:', licenseState.plan);
+      logLicense('License validated:', licenseState.plan);
     } else {
       licenseState = {
         isValid: false,
@@ -168,7 +199,7 @@ async function validateLicense(licenseKey) {
       // Clear cached state on invalid
       await chrome.storage.local.remove(['amp_license_state']);
       
-      log('License invalid:', data.error);
+      logLicense('License invalid:', data.error);
     }
     
     // Notify listeners
@@ -176,7 +207,7 @@ async function validateLicense(licenseKey) {
     
     return licenseState;
   } catch (error) {
-    logError('License validation failed:', error);
+    logLicenseError('License validation failed:', error);
     
     // Keep existing state on network error
     licenseState.lastChecked = Date.now();
@@ -187,7 +218,7 @@ async function validateLicense(licenseKey) {
 // Async validation (doesn't block)
 function validateLicenseAsync(licenseKey) {
   validateLicense(licenseKey).catch(err => {
-    logError('Async license validation failed:', err);
+    logLicenseError('Async license validation failed:', err);
   });
 }
 

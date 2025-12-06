@@ -4,8 +4,8 @@
 
 // Production logging - set to false to disable debug logs
 const AMP_DEBUG = false;
-const log = (...args) => AMP_DEBUG && log('[AMP Main]', ...args);
-const logError = (...args) => logError('[AMP Main]', ...args);
+const log = (...args) => AMP_DEBUG && console.log('[AMP Main]', ...args);
+const logError = (...args) => console.error('[AMP Main]', ...args);
 
 const path = require('path');
 const fs = require('fs');
