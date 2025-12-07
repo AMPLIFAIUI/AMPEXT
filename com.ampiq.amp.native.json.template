@@ -1,0 +1,10 @@
+{
+  "name": "com.ampiq.amp.native",
+  "description": "AMP Native Messaging Host - Stores AI conversation memory",
+  "path": "REPLACE_WITH_ABSOLUTE_PATH_TO_amp-native-host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://YOUR_EXTENSION_ID_HERE/"
+  ]
+}
+
