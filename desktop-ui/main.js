@@ -657,7 +657,7 @@ function updateConnectionStatus(connected) {
       console.warn('🔧 Main: Cannot send to renderer - window not available');
     }
     
-    log(`[AMP] HTTP connection: ${connected ? 'Connected' : 'Disconnected'}`);
+    log(`[AMP] Native messaging connection: ${connected ? 'Connected' : 'Disconnected'}`);
   } catch (error) {
     logError('updateConnectionStatus failed:', error);
   }

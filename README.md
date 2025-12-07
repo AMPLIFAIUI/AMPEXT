@@ -73,14 +73,36 @@ S1 (Raw Capture) → S2-S8 (Processing) → S9 (Canonical Summary)
 4. Click "Load unpacked" and select the `ext/` folder
 
 ### Native Messaging Host (Windows)
-1. Run in PowerShell (as admin):
+
+**Automatic Setup (Recommended):**
+1. Run the setup script in PowerShell:
+```powershell
+.\setup-native-host.ps1
+```
+2. Enter your Chrome extension ID when prompted (find it in `chrome://extensions/`)
+3. Restart Chrome completely
+
+**Manual Setup:**
+1. Copy `com.ampiq.amp.native.json.template` to `com.ampiq.amp.native.json` (or edit the existing one)
+2. Update `com.ampiq.amp.native.json`:
+   - Replace `REPLACE_WITH_ABSOLUTE_PATH_TO_amp-native-host.bat` with the absolute path to `amp-native-host.bat` in your installation directory
+   - Replace `YOUR_EXTENSION_ID_HERE` with your actual extension ID (format: `chrome-extension://YOUR_EXTENSION_ID/`)
+3. Register in Windows registry (PowerShell as admin):
+   - Replace `YOUR_INSTALLATION_DIRECTORY` in the script below with the actual path where you installed AMP:
 ```powershell
 $regPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.ampiq.amp.native"
+$manifestPath = "YOUR_INSTALLATION_DIRECTORY\com.ampiq.amp.native.json"
 New-Item -Path $regPath -Force | Out-Null
-Set-ItemProperty -Path $regPath -Name "(Default)" -Value "E:\AMPEXT NOV 2025\AMPEXT\com.ampiq.amp.native.json"
+Set-ItemProperty -Path $regPath -Name "(Default)" -Value $manifestPath
 ```
-
-2. Update `com.ampiq.amp.native.json` with your extension ID in `allowed_origins`
+   - Or use this version that auto-detects the current directory:
+```powershell
+$regPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\com.ampiq.amp.native"
+$manifestPath = (Resolve-Path "com.ampiq.amp.native.json").Path
+New-Item -Path $regPath -Force | Out-Null
+Set-ItemProperty -Path $regPath -Name "(Default)" -Value $manifestPath
+```
+4. Restart Chrome completely
 
 ### Desktop App
 ```bash
