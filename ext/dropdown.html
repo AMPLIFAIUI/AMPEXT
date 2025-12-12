@@ -611,8 +611,8 @@
 
         .action-btn {
             padding: 8px 10px;
-            background: rgba(0, 212, 170, 0.1);
-            border: 1px solid rgba(0, 212, 170, 0.2);
+            background: rgba(13, 18, 25, 0.8);
+            border: 1px solid rgba(0, 212, 170, 0.15);
             border-radius: 6px;
             color: #e6edf3;
             font-size: 10px;
@@ -626,7 +626,7 @@
         }
 
         .action-btn:hover {
-            background: rgba(0, 212, 170, 0.2);
+            background: rgba(20, 28, 38, 0.9);
             border-color: #00d4aa;
             color: #00d4aa;
         }
@@ -862,6 +862,25 @@
                     <div class="layer-count" id="archive-count">0</div>
                     <div class="layer-size" id="archive-bytes">0 B</div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Hot Pool Slots (Standalone Mode) -->
+        <div class="hot-pool-slots" id="hot-pool-slots" style="display: none;">
+            <h2>
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M12,4A8,8 0 0,0 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12A8,8 0 0,0 12,4Z"/>
+                </svg>
+                Hot Pool Slots (5x1MB)
+            </h2>
+            <div class="slot-summary" style="margin-bottom: 10px; padding: 8px; background: rgba(0, 212, 170, 0.1); border-radius: 6px;">
+                <div style="display: flex; justify-content: space-between; font-size: 12px;">
+                    <span>Total: <strong id="slot-total">0 MB / 5 MB</strong></span>
+                    <span>Usage: <strong id="slot-utilization">0%</strong></span>
+                </div>
+            </div>
+            <div class="slots-grid" id="slots-grid" style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;">
+                <!-- Slots will be populated by JavaScript -->
             </div>
         </div>
 

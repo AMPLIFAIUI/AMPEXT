@@ -19,6 +19,96 @@ const logBgError = (...args) => console.error('[AMP Background]', ...args);
 const log = logBg;
 const logError = logBgError;
 
+// ============================================================
+// RING ANIMATION - MUST BE AT TOP FOR IMMEDIATE START
+// ============================================================
+const frameSets = {
+  normal: [
+    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/normal-4.png',
+    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png',
+    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/normal-4.png',
+    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png'
+  ],
+  processing: [
+    'animated logo/processing-1.png', 'animated logo/processing-2.png', 'animated logo/processing-3.png', 'animated logo/processing-4.png',
+    'animated logo/processing-5.png', 'animated logo/processing-6.png', 'animated logo/processing-7.png', 'animated logo/processing-8.png',
+    'animated logo/processing-1.png', 'animated logo/processing-2.png', 'animated logo/processing-3.png', 'animated logo/processing-4.png',
+    'animated logo/processing-5.png', 'animated logo/processing-6.png', 'animated logo/processing-7.png', 'animated logo/processing-8.png'
+  ],
+  idle: [
+    'animated logo/idle-1.png', 'animated logo/idle-2.png', 'animated logo/idle-3.png', 'animated logo/idle-4.png',
+    'animated logo/idle-5.png', 'animated logo/idle-6.png', 'animated logo/idle-7.png', 'animated logo/idle-8.png',
+    'animated logo/idle-1.png', 'animated logo/idle-2.png', 'animated logo/idle-3.png', 'animated logo/idle-4.png',
+    'animated logo/idle-5.png', 'animated logo/idle-6.png', 'animated logo/idle-7.png', 'animated logo/idle-8.png'
+  ],
+  error: [
+    'animated logo/error-1.png', 'animated logo/error-2.png', 'animated logo/error-3.png', 'animated logo/error-4.png',
+    'animated logo/error-5.png', 'animated logo/error-6.png', 'animated logo/error-7.png', 'animated logo/error-8.png',
+    'animated logo/error-1.png', 'animated logo/error-2.png', 'animated logo/error-3.png', 'animated logo/error-4.png',
+    'animated logo/error-5.png', 'animated logo/error-6.png', 'animated logo/error-7.png', 'animated logo/error-8.png'
+  ],
+  'quick-activity': [
+    'animated logo/processing-1.png', 'animated logo/processing-2.png', 'animated logo/processing-3.png', 'animated logo/processing-4.png',
+    'animated logo/processing-5.png', 'animated logo/processing-6.png', 'animated logo/processing-7.png', 'animated logo/processing-8.png'
+  ]
+};
+
+let ringFrames = frameSets.normal;
+let ringFrameIndex = 0;
+let ringAnimationInterval = null;
+let currentRingState = 'normal';
+
+function setRingState(state) {
+  try {
+    if (!frameSets[state]) state = 'normal';
+    if (currentRingState === state) return;
+    currentRingState = state;
+    stopRingAnimation();
+    ringFrames = frameSets[state];
+    ringFrameIndex = 0;
+    startRingAnimation();
+  } catch (error) {
+    console.warn('setRingState failed:', error);
+  }
+}
+
+function startRingAnimation() {
+  try {
+    if (ringAnimationInterval) return;
+    ringAnimationInterval = setInterval(() => {
+      try {
+        if (chrome && chrome.action && chrome.action.setIcon) {
+          chrome.action.setIcon({
+            path: {
+              16: ringFrames[ringFrameIndex],
+              32: ringFrames[ringFrameIndex],
+              48: ringFrames[ringFrameIndex],
+              64: ringFrames[ringFrameIndex],
+              128: ringFrames[ringFrameIndex],
+            }
+          });
+        }
+        ringFrameIndex = (ringFrameIndex + 1) % ringFrames.length;
+      } catch (error) {
+        console.warn('Ring animation frame failed:', error);
+      }
+    }, 81); // 81ms = 12.35 FPS
+  } catch (error) {
+    console.warn('startRingAnimation failed:', error);
+  }
+}
+
+function stopRingAnimation() {
+  if (ringAnimationInterval) {
+    clearInterval(ringAnimationInterval);
+    ringAnimationInterval = null;
+  }
+}
+
+// START ANIMATION IMMEDIATELY
+startRingAnimation();
+// ============================================================
+
 // ADAPTIVE PERFORMANCE CONFIGURATION
 // Detects system capabilities and adjusts accordingly
 const PERF_CONFIG = {
@@ -223,17 +313,27 @@ class StatsManager {
 // Global stats manager instance
 const statsManager = new StatsManager();
 
+// Broadcast stats to all open extension pages (popups, windows)
+statsManager.addListener((stats) => {
+  try {
+    chrome.runtime.sendMessage({
+      type: 'statsUpdate',
+      action: 'statsUpdate',
+      stats: stats
+    }).catch(() => {
+      // Silently ignore if no receivers (popup closed)
+    });
+  } catch (error) {
+    // Ignore broadcast errors
+  }
+});
+
 // Simplified Connection Management - Single Desktop App
 let desktopConnected = false;
 let connectionRetryCount = 0;
 const MAX_RETRY_ATTEMPTS = 5;
 
-// Initialize analytics
-try {
-  ampAnalytics = new AMPAnalytics();
-} catch (error) {
-  console.warn('Failed to initialize AMP Analytics:', error);
-}
+// Analytics initialization will happen after AMPAnalytics class is defined (see line ~1600)
 
 // Initialize memory pool on startup
 chrome.runtime.onStartup.addListener(async () => {
@@ -253,16 +353,25 @@ chrome.runtime.onStartup.addListener(async () => {
   }, 3000);
   
   // Retry connection every 60 seconds if not connected (reduced frequency)
+  // But only if native host is registered (not if "host not found" error)
   const retryInterval = setInterval(async () => {
     // Skip if idle
     if (isExtensionIdle) return;
+    
+    // Skip if we know the host isn't registered
+    if (globalThis._nativeHostNotRegisteredLogged) {
+      return; // Don't retry if host isn't registered
+    }
     
     if (!desktopConnected) {
       log('🔄 Retrying native messaging connection...');
       try {
         await testDesktopConnection();
       } catch (error) {
-        logError('Native messaging retry failed:', error);
+        // Only log if it's not a "host not found" error
+        if (!error.message || (!error.message.includes('host not found') && !error.message.includes('not registered'))) {
+          logError('Native messaging retry failed:', error);
+        }
       }
     }
   }, PERF_CONFIG.CONNECTION_RETRY_INTERVAL);
@@ -1083,87 +1192,99 @@ async function handleMessage(message, sender, sendResponse) {
       case 'storeMemory':
         await handleStoreMemory(message, sender);
         sendResponse({ success: true });
+        return true; // Keep channel open for async
         break;
         
       case 'getMemoryStats':
         log('🔧 Background: Received getMemoryStats request');
-        const stats = await handleGetMemoryStats();
-        log('🔧 Background: Sending stats response:', stats);
-        sendResponse({ success: true, stats });
+        handleGetMemoryStats().then(stats => {
+          log('🔧 Background: Sending stats response:', stats);
+          sendResponse({ success: true, stats });
+        }).catch(error => {
+          logError('🔧 Background: Error getting stats:', error);
+          sendResponse({ success: false, error: error.message });
+        });
+        return true; // Keep channel open for async
         break;
         
       case 'get_connection_status':
-        try {
-          const status = await getDesktopStatus();
+        getDesktopStatus().then(status => {
           sendResponse({ 
             desktopConnected: status ? status.connected : false,
             storageAvailable: status ? status.storageAvailable : false,
             stats: status ? status.stats : null
           });
-        } catch (error) {
+        }).catch(error => {
           sendResponse({ desktopConnected: false, error: error.message });
-        }
+        });
+        return true;
         break;
         
       case 'pingDesktopApp':
-        try {
-          const connected = await testDesktopConnection();
+        testDesktopConnection().then(connected => {
           sendResponse({ success: connected });
-        } catch (error) {
+        }).catch(error => {
           sendResponse({ success: false, error: error.message });
-        }
+        });
+        return true;
         break;
         
       case 'setContextCarryover':
-        try {
-          const { tabId, carryover } = message;
-          const hostname = new URL(sender.tab.url).hostname;
-          
-          // Store user preference for this site
-          const result = await chrome.storage.local.get(['amp_context_carryover_preferences']);
-          const preferences = result.amp_context_carryover_preferences || {};
-          preferences[hostname] = carryover;
-          
-          await chrome.storage.local.set({
-            amp_context_carryover_preferences: preferences
-          });
-          
-          log(`AMP Background: Context carryover preference set for ${hostname}: ${carryover}`);
-          
-          // Update tab info with the preference
-          if (activeTabs.has(tabId)) {
-            activeTabs.set(tabId, {
-              ...activeTabs.get(tabId),
-              contextCarryover: carryover
+        (async () => {
+          try {
+            const { tabId, carryover } = message;
+            const hostname = new URL(sender.tab.url).hostname;
+            
+            // Store user preference for this site
+            const result = await chrome.storage.local.get(['amp_context_carryover_preferences']);
+            const preferences = result.amp_context_carryover_preferences || {};
+            preferences[hostname] = carryover;
+            
+            await chrome.storage.local.set({
+              amp_context_carryover_preferences: preferences
             });
+            
+            log(`AMP Background: Context carryover preference set for ${hostname}: ${carryover}`);
+            
+            // Update tab info with the preference
+            if (activeTabs.has(tabId)) {
+              activeTabs.set(tabId, {
+                ...activeTabs.get(tabId),
+                contextCarryover: carryover
+              });
+            }
+            
+            sendResponse({ success: true });
+          } catch (error) {
+            logError('Error setting context carryover preference:', error);
+            sendResponse({ success: false, error: error.message });
           }
-          
-          sendResponse({ success: true });
-        } catch (error) {
-          logError('Error setting context carryover preference:', error);
-          sendResponse({ success: false, error: error.message });
-        }
+        })();
+        return true;
         break;
         
       case 'clearContextCarryoverPreference':
-        try {
-          const hostname = new URL(sender.tab.url).hostname;
-          
-          // Remove user preference for this site
-          const result = await chrome.storage.local.get(['amp_context_carryover_preferences']);
-          const preferences = result.amp_context_carryover_preferences || {};
-          delete preferences[hostname];
-          
-          await chrome.storage.local.set({
-            amp_context_carryover_preferences: preferences
-          });
-          
-          log(`AMP Background: Context carryover preference cleared for ${hostname}`);
-          sendResponse({ success: true });
-        } catch (error) {
-          logError('Error clearing context carryover preference:', error);
-          sendResponse({ success: false, error: error.message });
-        }
+        (async () => {
+          try {
+            const hostname = new URL(sender.tab.url).hostname;
+            
+            // Remove user preference for this site
+            const result = await chrome.storage.local.get(['amp_context_carryover_preferences']);
+            const preferences = result.amp_context_carryover_preferences || {};
+            delete preferences[hostname];
+            
+            await chrome.storage.local.set({
+              amp_context_carryover_preferences: preferences
+            });
+            
+            log(`AMP Background: Context carryover preference cleared for ${hostname}`);
+            sendResponse({ success: true });
+          } catch (error) {
+            logError('Error clearing context carryover preference:', error);
+            sendResponse({ success: false, error: error.message });
+          }
+        })();
+        return true;
         break;
         
       case 'getMonitoringStatus':
@@ -1180,12 +1301,12 @@ async function handleMessage(message, sender, sendResponse) {
         break;
         
       case 'requestMonitoringSwitch':
-        try {
-          await switchMonitoringTarget(sender.tab);
+        switchMonitoringTarget(sender.tab).then(() => {
           sendResponse({ success: true });
-        } catch (error) {
+        }).catch(error => {
           sendResponse({ success: false, error: error.message });
-        }
+        });
+        return true;
         break;
         
       case 'getTabId':
@@ -1619,7 +1740,12 @@ class AMPAnalytics {
   }
 }
 
-  // Analytics already initialized at the top
+// Initialize analytics after class definition
+try {
+  ampAnalytics = new AMPAnalytics();
+} catch (error) {
+  console.warn('Failed to initialize AMP Analytics:', error);
+}
 
 function calculateImportance(content, messageType) {
   let importance = 1;
@@ -1910,6 +2036,30 @@ async function handleGetMemoryStats() {
     if (activeMemoryPool) {
       const stats = activeMemoryPool.getStats();
       const allChunks = activeMemoryPool.getAllChunks();
+      
+      // Get slot details for standalone mode display
+      const slotDetails = stats.slotStats || activeMemoryPool.slots?.map(slot => ({
+        id: slot.id,
+        currentSize: slot.currentSize || 0,
+        maxSize: slot.maxSize || (1 * 1024 * 1024),
+        chunkCount: slot.chunks?.size || 0,
+        utilization: slot.maxSize ? ((slot.currentSize / slot.maxSize) * 100).toFixed(1) + '%' : '0%',
+        usedMB: ((slot.currentSize || 0) / (1024 * 1024)).toFixed(2),
+        maxMB: ((slot.maxSize || (1 * 1024 * 1024)) / (1024 * 1024)).toFixed(2)
+      })) || [];
+      
+      const totalSlotSize = slotDetails.reduce((sum, s) => sum + (s.maxSize || 0), 0);
+      const totalSlotUsed = slotDetails.reduce((sum, s) => sum + (s.currentSize || 0), 0);
+      
+      // Get providers, topics, conversations from actual chunks
+      const providers = new Set();
+      const topics = new Set();
+      const conversations = new Set();
+      allChunks.forEach(chunk => {
+        if (chunk.ai_provider) providers.add(chunk.ai_provider);
+        if (chunk.topic) topics.add(chunk.topic);
+        if (chunk.conversation_id) conversations.add(chunk.conversation_id);
+      });
 
       hotStats = {
         totalChunks: allChunks.length,
@@ -1917,17 +2067,24 @@ async function handleGetMemoryStats() {
         hotBufferChunks: stats.hotBufferChunks || 0,
         archivedChunks: stats.archivedChunks || 0,
         hotMemorySize: stats.hotMemorySize || 0,
-        domSize: stats.domSize || 0,
+        domSize: stats.domSize || stats.domMirrorSize || 0,
         hotBufferSize: stats.hotBufferSize || 0,
         archiveSize: stats.archiveSize || 0,
         messageRate: stats.messageRate || 0,
         growthRate: stats.growthRate || 0,
-        providers: Array.from(activeMemoryPool.conversationIndex?.keys() || []),
-        topics: Array.from(activeMemoryPool.conversationIndex?.keys() || []),
-        conversations: Array.from(activeMemoryPool.conversationIndex?.keys() || []),
+        providers: Array.from(providers),
+        topics: Array.from(topics),
+        conversations: Array.from(conversations),
         lastUpdated: Date.now(),
         totalSize: allChunks.reduce((sum, chunk) => sum + (chunk.size || 0), 0),
-        activeTabs: activeTabs.size
+        activeTabs: activeTabs.size,
+        // Slot-level details for standalone mode
+        slotStats: slotDetails,
+        totalSlotSize: totalSlotSize,
+        totalSlotUsed: totalSlotUsed,
+        totalSlotMB: (totalSlotSize / (1024 * 1024)).toFixed(2),
+        usedSlotMB: (totalSlotUsed / (1024 * 1024)).toFixed(2),
+        slotUtilization: totalSlotSize ? ((totalSlotUsed / totalSlotSize) * 100).toFixed(1) + '%' : '0%'
       };
     }
 
@@ -2119,7 +2276,15 @@ async function handleGetDetailedStats() {
 
 function updateStats() {
   try {
-    const memories = Array.from(activeMemoryPool.hotPool.values());
+    if (!activeMemoryPool) {
+      logError('updateStats: activeMemoryPool is null');
+      return;
+    }
+    
+    // Get stats from memory pool (includes slot details)
+    const poolStats = activeMemoryPool.getStats();
+    const memories = activeMemoryPool.getAllChunks();
+    
     const providers = new Set();
     const topics = new Set();
     const conversations = new Set();
@@ -2127,11 +2292,11 @@ function updateStats() {
     let totalChars = 0;
     
     memories.forEach(mem => {
-      providers.add(mem.ai_provider);
-      topics.add(mem.topic);
-      conversations.add(mem.conversation_id);
+      if (mem.ai_provider) providers.add(mem.ai_provider);
+      if (mem.topic) topics.add(mem.topic);
+      if (mem.conversation_id) conversations.add(mem.conversation_id);
       totalSize += mem.size || 0;
-      totalChars += mem.content?.length || 0;
+      totalChars += (mem.fullText?.length || mem.content?.length || 0);
     });
     
     // Get analytics metrics if available
@@ -2153,6 +2318,20 @@ function updateStats() {
     const hotBufferSize = hotMemories.reduce((sum, m) => sum + (m.size || 0), 0);
     const archiveSize = archivedMemories.reduce((sum, m) => sum + (m.size || 0), 0);
     
+    // Calculate slot-level details for standalone mode
+    const slotDetails = poolStats.slotStats || activeMemoryPool.slots?.map(slot => ({
+      id: slot.id,
+      currentSize: slot.currentSize || 0,
+      maxSize: slot.maxSize || (1 * 1024 * 1024), // Default 1MB
+      chunkCount: slot.chunks?.size || 0,
+      utilization: slot.maxSize ? ((slot.currentSize / slot.maxSize) * 100).toFixed(1) + '%' : '0%',
+      usedMB: ((slot.currentSize || 0) / (1024 * 1024)).toFixed(2),
+      maxMB: ((slot.maxSize || (1 * 1024 * 1024)) / (1024 * 1024)).toFixed(2)
+    })) || [];
+    
+    const totalSlotSize = slotDetails.reduce((sum, s) => sum + (s.maxSize || 0), 0);
+    const totalSlotUsed = slotDetails.reduce((sum, s) => sum + (s.currentSize || 0), 0);
+    
     const newStats = {
       domChunks: domMemories.length,
       hotBufferChunks: hotMemories.length,
@@ -2168,6 +2347,13 @@ function updateStats() {
       conversations: Array.from(conversations),
       lastUpdated: Date.now(),
       analytics: analyticsMetrics,
+      // Slot-level details for standalone mode
+      slotStats: slotDetails,
+      totalSlotSize: totalSlotSize,
+      totalSlotUsed: totalSlotUsed,
+      totalSlotMB: (totalSlotSize / (1024 * 1024)).toFixed(2),
+      usedSlotMB: (totalSlotUsed / (1024 * 1024)).toFixed(2),
+      slotUtilization: totalSlotSize ? ((totalSlotUsed / totalSlotSize) * 100).toFixed(1) + '%' : '0%',
       systemHealth: {
         errorCount: 0,
         lastError: null,
@@ -2179,7 +2365,9 @@ function updateStats() {
     statsManager.updateStats(newStats);
     
     // Also update the memory pool stats for backward compatibility
-    activeMemoryPool.stats = newStats;
+    if (activeMemoryPool) {
+      activeMemoryPool.stats = newStats;
+    }
     
     // Update connection status
     updateConnectionStatus(desktopConnected);
@@ -2194,11 +2382,14 @@ function updateStats() {
       topics: [],
       conversations: [],
       lastUpdated: Date.now(),
-      error: error.message
+      error: error.message,
+      slotStats: []
     };
     
     statsManager.updateStats(errorStats);
-    activeMemoryPool.stats = errorStats;
+    if (activeMemoryPool) {
+      activeMemoryPool.stats = errorStats;
+    }
   }
 }
 
@@ -2312,10 +2503,10 @@ function updateConnectionStatus(connected) {
     // Update ring state based on connection
     try {
       if (connected) {
-        setRingState('normal'); // Green/connected state
+        setRingState('normal'); // Colored/connected state
         log('🟢 AMP Background: Connected');
       } else {
-        setRingState('idle'); // Red/disconnected state
+        setRingState('normal'); // Use colored normal ring even when disconnected
         log('🔴 AMP Background: Disconnected');
       }
     } catch (error) {
@@ -2369,8 +2560,15 @@ function connectToNativeHost() {
   try {
     // Check if already connected
     if (nativePort) {
-      log('🔌 Already connected to native messaging host');
-      return true;
+      // Verify port is still connected
+      const error = chrome.runtime.lastError;
+      if (error) {
+        log('🔌 Port exists but has error, reconnecting...');
+        nativePort = null;
+      } else {
+        log('🔌 Already connected to native messaging host');
+        return true;
+      }
     }
 
     log('🔌 Connecting to native messaging host:', NATIVE_HOST_NAME);
@@ -2383,6 +2581,15 @@ function connectToNativeHost() {
 
     nativePort = chrome.runtime.connectNative(NATIVE_HOST_NAME);
 
+    // Check if connection failed immediately
+    const connectError = chrome.runtime.lastError;
+    if (connectError) {
+      logError('❌ Failed to connect to native host:', connectError.message);
+      nativePort = null;
+      updateConnectionStatus(false);
+      return false;
+    }
+
     // Handle successful connection
     nativePort.onMessage.addListener((message) => {
       log('📨 Native message received:', message.type, message);
@@ -2393,20 +2600,41 @@ function connectToNativeHost() {
       }
     });
 
+    let disconnectHandled = false;
     nativePort.onDisconnect.addListener(() => {
+      if (disconnectHandled) return; // Prevent duplicate handling
+      disconnectHandled = true;
+      
       const error = chrome.runtime.lastError;
-      logError('❌ Native port disconnected:', error?.message || 'Unknown reason');
+      const errorMsg = error?.message || 'Unknown reason';
+      
+      // Only log once per disconnect to reduce spam
+      if (!errorMsg.includes('host not found') && !errorMsg.includes('not registered')) {
+        logError('❌ Native port disconnected:', errorMsg);
+      }
+      
       nativePort = null;
       updateConnectionStatus(false);
 
       // Reject all pending responses
       pendingResponses.forEach((pending, id) => {
         clearTimeout(pending.timeout);
-        pending.reject(new Error('Native port disconnected'));
+        pending.reject(new Error('Native port disconnected: ' + errorMsg));
       });
       pendingResponses.clear();
 
-      // Try to reconnect after 5 seconds
+      // Don't retry if host is not registered - user needs to run setup script
+      if (errorMsg.includes('host not found') || errorMsg.includes('not registered') || errorMsg.includes('Specified native messaging host not found')) {
+        // Only log once, not on every retry
+        if (!globalThis._nativeHostNotRegisteredLogged) {
+          logError('❌ Native messaging host not registered. Run setup-native-host.ps1 to register it.');
+          globalThis._nativeHostNotRegisteredLogged = true;
+        }
+        // Stop retrying - user needs to register the host first
+        return;
+      }
+      
+      // For other errors, retry after 5 seconds
       setTimeout(() => {
         if (!nativePort) {
           log('🔄 Attempting to reconnect to native host...');
@@ -2415,24 +2643,30 @@ function connectToNativeHost() {
       }, 5000);
     });
     
-    // Send ping to verify connection
-    sendNativeMessage({ type: 'ping' }).then(() => {
-      log('✅ Native messaging connection established');
-      updateConnectionStatus(true);
-      
-      // Flush queued messages
-      while (nativeMessageQueue.length > 0) {
-        const queuedMessage = nativeMessageQueue.shift();
-        sendNativeMessage(queuedMessage);
+    // Wait a moment to see if disconnect fires immediately, then send ping
+    setTimeout(() => {
+      if (nativePort && !disconnectHandled) {
+        // Send ping to verify connection
+        sendNativeMessage({ type: 'ping' }).then(() => {
+          log('✅ Native messaging connection established');
+          updateConnectionStatus(true);
+          
+          // Flush queued messages
+          while (nativeMessageQueue.length > 0) {
+            const queuedMessage = nativeMessageQueue.shift();
+            sendNativeMessage(queuedMessage);
+          }
+        }).catch((error) => {
+          logError('❌ Native ping failed:', error);
+          // Don't set disconnected here - let the disconnect handler do it
+        });
       }
-    }).catch((error) => {
-      logError('❌ Native ping failed:', error);
-      updateConnectionStatus(false);
-    });
+    }, 500);
     
     return true;
   } catch (error) {
     logError('❌ Failed to connect to native host:', error);
+    nativePort = null;
     updateConnectionStatus(false);
     return false;
   }
@@ -2533,8 +2767,23 @@ async function testDesktopConnection() {
     
     if (!nativePort) {
       connectToNativeHost();
-      // Wait a bit for connection
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait longer for connection to establish (native host might need time to start)
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+    
+    // Check if port is still connected after wait
+    if (!nativePort) {
+      log('⚠️ Native port not available after connection attempt');
+      updateConnectionStatus(false);
+      return false;
+    }
+    
+    // Check for immediate disconnect errors
+    const error = chrome.runtime.lastError;
+    if (error) {
+      logError('❌ Native messaging error:', error.message);
+      updateConnectionStatus(false);
+      return false;
     }
     
     const response = await sendNativeMessage({ type: 'ping' });
@@ -2545,12 +2794,15 @@ async function testDesktopConnection() {
       return true;
     } else {
       console.warn('⚠️ Unexpected response from native host:', response);
-      updateConnectionStatus(false);
+      // Don't set disconnected here - might be a temporary issue
       return false;
     }
   } catch (error) {
     logError('❌ Native messaging test failed:', error);
-    updateConnectionStatus(false);
+    // Only set disconnected if it's a clear connection error
+    if (error.message && (error.message.includes('not connected') || error.message.includes('disconnected'))) {
+      updateConnectionStatus(false);
+    }
     return false;
   }
 }
@@ -2766,13 +3018,20 @@ initializeMemoryPool().then(async () => {
     if (isExtensionIdle) return;
     
     try {
-      const stats = activeMemoryPool.getStats();
+      if (!activeMemoryPool) return;
+      
+      // Get comprehensive stats including slot details
+      updateStats(); // This updates statsManager
+      const stats = statsManager.getStats();
+      
       // Broadcast stats to all connected clients (popup, desktop UI, etc.)
+      // Use chrome.runtime.sendMessage which broadcasts to all listeners
       chrome.runtime.sendMessage({
-        action: 'statsUpdate',
+        type: 'statsUpdate',
+        action: 'statsUpdate', // Support both formats
         stats: stats
       }).catch(() => {
-        // Ignore errors when no clients are connected
+        // Ignore errors when no clients are connected (popup closed)
       });
     } catch (error) {
       // Silently ignore - no need to warn every time
@@ -2908,121 +3167,4 @@ function stopHealthMonitoring() {
   }
 }
 
-// Rainbow + Colored Spot Status System
-const frameSets = {
-  // 🌈 Pure Rainbow: Perfect state
-  normal: [
-    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/normal-4.png',
-    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png',
-    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/normal-4.png',
-    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png'
-  ],
-  
-  // 🌈 + 🟡 Yellow Spot: Processing content
-  processing: [
-    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/processing-1.png',
-    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png',
-    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/processing-1.png',
-    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png'
-  ],
-  
-  // 🔵 Blue Ring: Idle/waiting state (plain blue, no red)
-  idle: [
-    'animated logo/idle-1.png', 'animated logo/idle-2.png', 'animated logo/idle-3.png', 'animated logo/idle-4.png',
-    'animated logo/idle-5.png', 'animated logo/idle-6.png', 'animated logo/idle-7.png', 'animated logo/idle-8.png',
-    'animated logo/idle-1.png', 'animated logo/idle-2.png', 'animated logo/idle-3.png', 'animated logo/idle-4.png',
-    'animated logo/idle-5.png', 'animated logo/idle-6.png', 'animated logo/idle-7.png', 'animated logo/idle-8.png'
-  ],
-  
-  // 🌈 + 🔵 Blue Spot: Connected but not on AI site
-  'not-ai-site': [
-    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/idle-1.png',
-    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png',
-    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/idle-1.png',
-    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png'
-  ],
-  
-  // 🌈 + 🟠 Orange Spot: Quick activity
-  'quick-activity': [
-    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/processing-2.png',
-    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png',
-    'animated logo/normal-1.png', 'animated logo/normal-2.png', 'animated logo/normal-3.png', 'animated logo/processing-2.png',
-    'animated logo/normal-5.png', 'animated logo/normal-6.png', 'animated logo/normal-7.png', 'animated logo/normal-8.png'
-  ],
-  
-  // 🔴 Solid Red: Error/crash state (Debug)
-  error: [
-    'animated logo/error-1.png', 'animated logo/error-2.png', 'animated logo/error-3.png', 'animated logo/error-4.png',
-    'animated logo/error-5.png', 'animated logo/error-6.png', 'animated logo/error-7.png', 'animated logo/error-8.png'
-  ],
-  
-  // ⚪ Solid Grey: No connection (Debug)
-  'no-connection': [
-    'animated logo/idle-1.png', 'animated logo/idle-2.png', 'animated logo/idle-3.png', 'animated logo/idle-4.png',
-    'animated logo/idle-5.png', 'animated logo/idle-6.png', 'animated logo/idle-7.png', 'animated logo/idle-8.png'
-  ],
-  
-  // 🟡 Solid Yellow: Debug mode
-  'debug': [
-    'animated logo/processing-1.png', 'animated logo/processing-2.png', 'animated logo/processing-3.png', 'animated logo/processing-4.png',
-    'animated logo/processing-5.png', 'animated logo/processing-6.png', 'animated logo/processing-7.png', 'animated logo/processing-8.png'
-  ]
-};
-
-let ringFrames = frameSets.normal;
-let ringFrameIndex = 0;
-let ringAnimationInterval = null;
-let currentRingState = 'normal';
-
-function setRingState(state) {
-  try {
-    if (!frameSets[state]) state = 'normal';
-    if (currentRingState === state) return;
-    currentRingState = state;
-    stopRingAnimation();
-    ringFrames = frameSets[state];
-    ringFrameIndex = 0;
-    startRingAnimation();
-  } catch (error) {
-    console.warn('setRingState failed:', error);
-  }
-}
-
-function startRingAnimation() {
-  try {
-    if (ringAnimationInterval) return;
-    ringAnimationInterval = setInterval(() => {
-      try {
-        if (chrome && chrome.action && chrome.action.setIcon) {
-          chrome.action.setIcon({
-            path: {
-              16: ringFrames[ringFrameIndex],
-              32: ringFrames[ringFrameIndex],
-              48: ringFrames[ringFrameIndex],
-              64: ringFrames[ringFrameIndex],
-              128: ringFrames[ringFrameIndex],
-            }
-          });
-        }
-        ringFrameIndex = (ringFrameIndex + 1) % ringFrames.length;
-      } catch (error) {
-        console.warn('Ring animation frame failed:', error);
-      }
-    }, 81); // 81ms = 12.35 FPS
-  } catch (error) {
-    console.warn('startRingAnimation failed:', error);
-  }
-}
-
-function stopRingAnimation() {
-  if (ringAnimationInterval) {
-    clearInterval(ringAnimationInterval);
-    ringAnimationInterval = null;
-  }
-}
-
-// Start with normal (rainbow) - will change based on connection status
-setRingState('normal');
-
-// Start the animation when the extension loads
-startRingAnimation();
+// Animation code moved to top of file for immediate start

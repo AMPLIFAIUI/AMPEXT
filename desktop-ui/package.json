@@ -39,7 +39,7 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "assets/icon256.png",
+      "icon": "assets/icon128.ico",
       "signAndEditExecutable": false
     },
     "nsis": {

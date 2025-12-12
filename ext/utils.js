@@ -6,7 +6,7 @@
 // Production logging - uses global AMP_DEBUG if available (set by background.js)
 // Falls back to false if not defined (when loaded standalone)
 const _AMP_DEBUG_UTILS = (typeof AMP_DEBUG !== 'undefined') ? AMP_DEBUG : false;
-const logUtils = (...args) => _AMP_DEBUG_UTILS && console.logUtils('[AMP Utils]', ...args);
+const logUtils = (...args) => _AMP_DEBUG_UTILS && console.log('[AMP Utils]', ...args);
 const logUtilsError = (...args) => console.error('[AMP Utils]', ...args);
 
 // IMPORTANT: Detect if we're in a Service Worker (no window object)
@@ -1244,56 +1244,9 @@ class MemoryPool {
     if (chunk.size !== chunk.fullText.length) {
       logUtilsError('AMP: Chunk size mismatch');
       return false;
-          }
-      
-      // Load dual zipper data
-      if (result.amp_fat_zipper) {
-        try {
-          this.fatZipper = new Map(result.amp_fat_zipper);
-          logUtils(`AMP: Loaded fat zipper (${this.fatZipper.size} blocks)`);
-        } catch (fatError) {
-          logUtilsError('AMP: Failed to load fat zipper:', fatError);
-        }
-      }
-      
-      if (result.amp_thin_zipper) {
-        try {
-          this.thinZipper = new Map(result.amp_thin_zipper);
-          logUtils(`AMP: Loaded thin zipper (${this.thinZipper.size} tags)`);
-        } catch (thinError) {
-          logUtilsError('AMP: Failed to load thin zipper:', thinError);
-        }
-      }
-      
-      if (result.amp_s1s9_progression) {
-        try {
-          this.s1s9Progression = new Map(result.amp_s1s9_progression);
-          logUtils(`AMP: Loaded S1-S9 progression (${this.s1s9Progression.size} conversations)`);
-        } catch (progressionError) {
-          logUtilsError('AMP: Failed to load S1-S9 progression:', progressionError);
-        }
-      }
-      
-      if (result.amp_current_squares) {
-        try {
-          this.currentSquares = new Map(result.amp_current_squares);
-          logUtils(`AMP: Loaded current squares (${this.currentSquares.size} conversations)`);
-        } catch (squaresError) {
-          logUtilsError('AMP: Failed to load current squares:', squaresError);
-        }
-      }
-      
-      if (result.amp_block_counter) {
-        this.blockCounter = result.amp_block_counter;
-        logUtils(`AMP: Loaded block counter: ${this.blockCounter}`);
-      }
-      
-      if (result.amp_chunk_counter) {
-        this.chunkCounter = result.amp_chunk_counter;
-        logUtils(`AMP: Loaded chunk counter: ${this.chunkCounter}`);
-      }
-      
-      return true;
+    }
+    
+    return true;
   }
 
   updateIndexes(chunk) {
