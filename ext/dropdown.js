@@ -222,6 +222,10 @@ statsManager.addListener((stats) => {
     safeUpdateText('total-bytes', formatBytes((stats.domSize ?? 0) + (stats.hotBufferSize ?? 0) + (stats.archiveSize ?? 0)));
     safeUpdateText('message-rate', stats.messageRate ?? 0);
     safeUpdateText('growth-rate', stats.growthRate ? `+${formatBytes(stats.growthRate)}/min` : '+0 B/min');
+    
+    // Update slot details for standalone mode
+    updateSlotDisplay(stats);
+    
     // Session time is now updated by separate timer every second
 });
 
@@ -932,6 +936,9 @@ function updateMemoryStatsFromBroadcast(stats) {
         safeUpdateText('message-rate', stats.messageRate ?? 0);
         safeUpdateText('growth-rate', stats.growthRate ? `+${formatBytes(stats.growthRate)}/min` : '+0 B/min');
         
+        // Update slot details for standalone mode
+        updateSlotDisplay(stats);
+        
         // Session time is now updated by separate timer every second
         
         // Update processing status and icon state
@@ -945,6 +952,65 @@ function updateMemoryStatsFromBroadcast(stats) {
         }
     } catch (error) {
         logError('🔧 Dropdown: Failed to update stats from broadcast:', error);
+    }
+}
+
+// Update slot display for standalone mode
+function updateSlotDisplay(stats) {
+    const slotsContainer = document.getElementById('hot-pool-slots');
+    const slotsGrid = document.getElementById('slots-grid');
+    const slotTotal = document.getElementById('slot-total');
+    const slotUtilization = document.getElementById('slot-utilization');
+    
+    if (!slotsContainer || !slotsGrid) return;
+    
+    // Show slots section if we have slot stats (standalone mode)
+    if (stats.slotStats && stats.slotStats.length > 0) {
+        slotsContainer.style.display = 'block';
+        
+        // Update summary
+        if (slotTotal) {
+            const usedMB = parseFloat(stats.usedSlotMB || stats.totalSlotUsed ? (stats.totalSlotUsed / (1024 * 1024)).toFixed(2) : '0');
+            const maxMB = parseFloat(stats.totalSlotMB || stats.totalSlotSize ? (stats.totalSlotSize / (1024 * 1024)).toFixed(2) : '5');
+            slotTotal.textContent = `${usedMB} MB / ${maxMB} MB`;
+        }
+        if (slotUtilization) {
+            slotUtilization.textContent = stats.slotUtilization || '0%';
+        }
+        
+        // Clear and populate slots
+        slotsGrid.innerHTML = '';
+        stats.slotStats.forEach((slot, index) => {
+            const slotDiv = document.createElement('div');
+            slotDiv.className = 'slot-item';
+            slotDiv.style.cssText = `
+                padding: 8px;
+                background: rgba(0, 212, 170, 0.05);
+                border: 1px solid rgba(0, 212, 170, 0.2);
+                border-radius: 6px;
+                text-align: center;
+            `;
+            
+            const utilization = parseFloat(slot.utilization) || 0;
+            const barColor = utilization > 80 ? '#e74c3c' : utilization > 50 ? '#f39c12' : '#2ecc71';
+            
+            slotDiv.innerHTML = `
+                <div style="font-size: 11px; font-weight: 600; margin-bottom: 4px; color: #00d4aa;">Slot ${slot.id}</div>
+                <div style="font-size: 10px; color: #bdc3c7; margin-bottom: 6px;">
+                    ${slot.usedMB} MB / ${slot.maxMB} MB
+                </div>
+                <div style="background: rgba(0,0,0,0.3); border-radius: 4px; height: 6px; overflow: hidden; margin-bottom: 4px;">
+                    <div style="background: ${barColor}; height: 100%; width: ${utilization}%; transition: width 0.3s;"></div>
+                </div>
+                <div style="font-size: 9px; color: #95a5a6;">
+                    ${slot.chunkCount} chunks · ${slot.utilization}
+                </div>
+            `;
+            
+            slotsGrid.appendChild(slotDiv);
+        });
+    } else {
+        slotsContainer.style.display = 'none';
     }
 }
 
