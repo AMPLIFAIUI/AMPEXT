@@ -546,7 +546,7 @@ async function updateProviderStatus(force = false) {
 }
 
 // Enhanced memory stats update with live data
-async function updateMemoryStats() {
+function updateMemoryStats() {
     try {
         log('🔧 Dropdown: Sending getMemoryStats request');
         chrome.runtime.sendMessage({ action: 'getMemoryStats' }, (response) => {

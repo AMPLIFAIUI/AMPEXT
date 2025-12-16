@@ -3513,7 +3513,7 @@ function summarize(text) {
   return memoryPool.quickSummary(text);
 }
 
-async function embed(text) {
+function embed(text) {
   return memoryPool.generateEmbedding(text);
 }
 

@@ -25,88 +25,163 @@ class ZipperViewer {
     }
     
     createZipperStructure() {
-        this.container.innerHTML = `
-            <div class="zipper-scene">
-                <!-- The zipper track that curves up -->
-                <div class="zipper-track">
-                    <!-- Left side - Fat Zipper -->
-                    <div class="zipper-side fat-side" data-side="fat">
-                        <div class="zipper-teeth">
-                            ${this.generateTeeth('fat', 12)}
-                        </div>
-                        <div class="zipper-label">
-                            <span class="label-icon">📦</span>
-                            <span class="label-text">FAT ZIPPER</span>
-                            <span class="label-count" id="fat-count">0 items</span>
-                        </div>
-                        <div class="zipper-pull fat-pull">
-                            <div class="pull-handle"></div>
-                        </div>
-                    </div>
-                    
-                    <!-- Center spine -->
-                    <div class="zipper-spine">
-                        <div class="spine-glow"></div>
-                    </div>
-                    
-                    <!-- Right side - Thin Zipper -->
-                    <div class="zipper-side thin-side" data-side="thin">
-                        <div class="zipper-teeth">
-                            ${this.generateTeeth('thin', 12)}
-                        </div>
-                        <div class="zipper-label">
-                            <span class="label-icon">📄</span>
-                            <span class="label-text">THIN ZIPPER</span>
-                            <span class="label-count" id="thin-count">0 items</span>
-                        </div>
-                        <div class="zipper-pull thin-pull">
-                            <div class="pull-handle"></div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Data flow visualization -->
-                <div class="data-flow-container" id="data-flow">
-                    <div class="data-stream fat-stream">
-                        <div class="stream-particles"></div>
-                    </div>
-                    <div class="data-stream thin-stream">
-                        <div class="stream-particles"></div>
-                    </div>
-                    <div class="storage-indicator">
-                        <div class="storage-icon">💾</div>
-                        <div class="storage-label">COLD STORAGE</div>
-                    </div>
-                </div>
-                
-                <!-- Content viewer panel -->
-                <div class="content-panel" id="content-panel">
-                    <div class="panel-header">
-                        <span class="panel-title" id="panel-title">Select a Zipper</span>
-                        <button class="panel-close" id="panel-close">✕</button>
-                    </div>
-                    <div class="panel-content" id="panel-content">
-                        <div class="panel-empty">Click a zipper side to view contents</div>
-                    </div>
-                </div>
-                
-                <!-- Instructions overlay -->
-                <div class="zipper-instructions" id="zipper-instructions">
-                    <div class="instruction">👆 Click the zipper to open</div>
-                </div>
-            </div>
-        `;
+        while (this.container.firstChild) {
+            this.container.removeChild(this.container.firstChild);
+        }
+        
+        const structure = this.buildZipperDOM();
+        this.container.appendChild(structure);
         
         this.addStyles();
     }
     
-    generateTeeth(side, count) {
-        let teeth = '';
-        for (let i = 0; i < count; i++) {
-            const delay = i * 0.05;
-            teeth += `<div class="tooth" style="animation-delay: ${delay}s" data-index="${i}"></div>`;
+    buildZipperDOM() {
+        const scene = document.createElement('div');
+        scene.className = 'zipper-scene';
+        
+        const track = document.createElement('div');
+        track.className = 'zipper-track';
+        
+        track.appendChild(this.createZipperSide('fat'));
+        
+        const spine = document.createElement('div');
+        spine.className = 'zipper-spine';
+        const spineGlow = document.createElement('div');
+        spineGlow.className = 'spine-glow';
+        spine.appendChild(spineGlow);
+        track.appendChild(spine);
+        
+        track.appendChild(this.createZipperSide('thin'));
+        scene.appendChild(track);
+        
+        scene.appendChild(this.createDataFlow());
+        scene.appendChild(this.createContentPanel());
+        scene.appendChild(this.createInstructions());
+        
+        return scene;
+    }
+    
+    createZipperSide(side) {
+        const sideDiv = document.createElement('div');
+        sideDiv.className = `zipper-side ${side}-side`;
+        sideDiv.dataset.side = side;
+        
+        const teeth = document.createElement('div');
+        teeth.className = 'zipper-teeth';
+        for (let i = 0; i < 12; i++) {
+            const tooth = document.createElement('div');
+            tooth.className = 'tooth';
+            tooth.style.animationDelay = `${i * 0.05}s`;
+            tooth.dataset.index = i;
+            teeth.appendChild(tooth);
         }
-        return teeth;
+        sideDiv.appendChild(teeth);
+        
+        const label = document.createElement('div');
+        label.className = 'zipper-label';
+        
+        const icon = document.createElement('span');
+        icon.className = 'label-icon';
+        icon.textContent = side === 'fat' ? '📦' : '📄';
+        
+        const text = document.createElement('span');
+        text.className = 'label-text';
+        text.textContent = side === 'fat' ? 'FAT ZIPPER' : 'THIN ZIPPER';
+        
+        const count = document.createElement('span');
+        count.className = 'label-count';
+        count.id = `${side}-count`;
+        count.textContent = '0 items';
+        
+        label.appendChild(icon);
+        label.appendChild(text);
+        label.appendChild(count);
+        sideDiv.appendChild(label);
+        
+        const pull = document.createElement('div');
+        pull.className = `zipper-pull ${side}-pull`;
+        const handle = document.createElement('div');
+        handle.className = 'pull-handle';
+        pull.appendChild(handle);
+        sideDiv.appendChild(pull);
+        
+        return sideDiv;
+    }
+    
+    createDataFlow() {
+        const container = document.createElement('div');
+        container.className = 'data-flow-container';
+        container.id = 'data-flow';
+        
+        const fatStream = document.createElement('div');
+        fatStream.className = 'data-stream fat-stream';
+        const fatParticles = document.createElement('div');
+        fatParticles.className = 'stream-particles';
+        fatStream.appendChild(fatParticles);
+        container.appendChild(fatStream);
+        
+        const thinStream = document.createElement('div');
+        thinStream.className = 'data-stream thin-stream';
+        const thinParticles = document.createElement('div');
+        thinParticles.className = 'stream-particles';
+        thinStream.appendChild(thinParticles);
+        container.appendChild(thinStream);
+        
+        const storage = document.createElement('div');
+        storage.className = 'storage-indicator';
+        const storageIcon = document.createElement('div');
+        storageIcon.className = 'storage-icon';
+        storageIcon.textContent = '💾';
+        const storageLabel = document.createElement('div');
+        storageLabel.className = 'storage-label';
+        storageLabel.textContent = 'COLD STORAGE';
+        storage.appendChild(storageIcon);
+        storage.appendChild(storageLabel);
+        container.appendChild(storage);
+        
+        return container;
+    }
+    
+    createContentPanel() {
+        const panel = document.createElement('div');
+        panel.className = 'content-panel';
+        panel.id = 'content-panel';
+        
+        const header = document.createElement('div');
+        header.className = 'panel-header';
+        const title = document.createElement('span');
+        title.className = 'panel-title';
+        title.id = 'panel-title';
+        title.textContent = 'Select a Zipper';
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'panel-close';
+        closeBtn.id = 'panel-close';
+        closeBtn.textContent = '✕';
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+        panel.appendChild(header);
+        
+        const content = document.createElement('div');
+        content.className = 'panel-content';
+        content.id = 'panel-content';
+        const empty = document.createElement('div');
+        empty.className = 'panel-empty';
+        empty.textContent = 'Click a zipper side to view contents';
+        content.appendChild(empty);
+        panel.appendChild(content);
+        
+        return panel;
+    }
+    
+    createInstructions() {
+        const instructions = document.createElement('div');
+        instructions.className = 'zipper-instructions';
+        instructions.id = 'zipper-instructions';
+        const instruction = document.createElement('div');
+        instruction.className = 'instruction';
+        instruction.textContent = '👆 Click the zipper to open';
+        instructions.appendChild(instruction);
+        return instructions;
     }
     
     addStyles() {
@@ -683,11 +758,12 @@ class ZipperViewer {
         title.className = `panel-title ${side}`;
         
         // Show loading
-        content.innerHTML = `
-            <div class="skeleton-item"></div>
-            <div class="skeleton-item"></div>
-            <div class="skeleton-item"></div>
-        `;
+        while (content.firstChild) content.removeChild(content.firstChild);
+        for (let i = 0; i < 3; i++) {
+            const skeleton = document.createElement('div');
+            skeleton.className = 'skeleton-item';
+            content.appendChild(skeleton);
+        }
         
         panel.classList.add('visible');
         
@@ -708,25 +784,47 @@ class ZipperViewer {
         const content = this.container.querySelector('#panel-content');
         const data = this.memoryData[side];
         
+        while (content.firstChild) content.removeChild(content.firstChild);
+        
         if (!data || data.length === 0) {
-            content.innerHTML = `
-                <div class="panel-empty">
-                    No ${side === 'fat' ? 'full conversation' : 'summary'} data yet.<br>
-                    <small>Chat with AI providers to capture memories</small>
-                </div>
-            `;
+            const empty = document.createElement('div');
+            empty.className = 'panel-empty';
+            empty.textContent = `No ${side === 'fat' ? 'full conversation' : 'summary'} data yet.`;
+            const br = document.createElement('br');
+            const small = document.createElement('small');
+            small.textContent = 'Chat with AI providers to capture memories';
+            empty.appendChild(br);
+            empty.appendChild(small);
+            content.appendChild(empty);
             return;
         }
         
-        content.innerHTML = data.map(item => `
-            <div class="memory-item ${side}">
-                <div class="memory-item-header">
-                    <span class="memory-item-provider">${item.provider || 'Unknown'}</span>
-                    <span class="memory-item-time">${this.formatTime(item.timestamp)}</span>
-                </div>
-                <div class="memory-item-content">${this.truncate(item.content, 150)}</div>
-            </div>
-        `).join('');
+        data.forEach(item => {
+            const memItem = document.createElement('div');
+            memItem.className = `memory-item ${side}`;
+            
+            const header = document.createElement('div');
+            header.className = 'memory-item-header';
+            
+            const provider = document.createElement('span');
+            provider.className = 'memory-item-provider';
+            provider.textContent = item.provider || 'Unknown';
+            
+            const time = document.createElement('span');
+            time.className = 'memory-item-time';
+            time.textContent = this.formatTime(item.timestamp);
+            
+            header.appendChild(provider);
+            header.appendChild(time);
+            memItem.appendChild(header);
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'memory-item-content';
+            contentDiv.textContent = this.truncate(item.content, 150);
+            memItem.appendChild(contentDiv);
+            
+            content.appendChild(memItem);
+        });
     }
     
     startDataFlow(side) {
