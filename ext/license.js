@@ -10,11 +10,8 @@ const logLicenseError = (...args) => console.error('[AMP License]', ...args);
 const LICENSE_API_URL = 'https://amp-license-api.vercel.app';
 
 // Developer/Owner license keys (bypass API validation)
-const DEV_LICENSE_KEYS = [
-  'AMP-DEV-OWNER-2025',
-  'AMP-LIFETIME-OWNER',
-  'AMPIQ-MASTER-KEY-001'
-];
+// For production, these should be removed or loaded from secure environment
+const DEV_LICENSE_KEYS = [];
 
 // License state
 let licenseState = {

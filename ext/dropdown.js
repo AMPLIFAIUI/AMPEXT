@@ -67,58 +67,8 @@ async function checkLicenseStatus() {
 
 // Show activation prompt for unlicensed users
 function showActivationPrompt() {
-    document.body.innerHTML = `
-        <div style="
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            padding: 30px;
-            text-align: center;
-            background: linear-gradient(135deg, #1a1a2e, #16213e, #0f3460);
-            color: #fff;
-        ">
-            <svg width="80" height="80" viewBox="0 0 32 32" style="margin-bottom: 20px;">
-                <rect x="7.31" y="-15.13" width="30.63" height="30.63" rx="15.32" fill="#030303" transform="rotate(44.53)"/>
-                <path fill-rule="evenodd" clip-rule="evenodd" d="m 14.617,17.437 c 0.431,0.017 0.869,0.037 1.314,0.057 l 0.481,0.022 c 0.341,0.016 0.686,0.032 1.033,0.046 l 0.142,0.006 c 4.484,0.173 9.453,0.025 13.206,-3.775 l -2.128,-2.102 c -0.757,0.766 -1.58,1.34 -2.468,1.767 L 18.415,5.771 C 18.831,4.879 19.395,4.048 20.151,3.282 L 18.023,1.18 C 14.27,4.98 14.184,9.951 14.413,14.432 9.929,14.259 4.96,14.407 1.206,18.208 l 2.129,2.102 c 0.756,-0.766 1.58,-1.34 2.467,-1.767 l 7.783,7.686 c -0.416,0.893 -0.98,1.723 -1.737,2.49 l 2.129,2.102 c 2.93,-2.968 3.625,-6.649 3.68,-10.253 -0.438,-0.017 -0.861,-0.037 -1.266,-0.056 l -0.599,-0.028 c -0.39,-0.018 -0.768,-0.034 -1.132,-0.048 -0.01,0.864 -0.056,1.695 -0.161,2.492 L 9.093,17.588 C 10.771,17.345 12.606,17.359 14.582,17.436 Z m 2.884,-8.363 5.406,5.339 c -1.678,0.242 -3.513,0.228 -5.489,0.152 -0.101,-1.975 -0.138,-3.81 0.083,-5.491 z" fill="#3498db"/>
-            </svg>
-            <h2 style="margin-bottom: 10px; color: #3498db;">AMP - Auto Memory Persistence</h2>
-            <p style="margin-bottom: 25px; color: #bdc3c7; line-height: 1.5;">
-                Please activate your license to use AMP.
-            </p>
-            <input type="text" id="licenseKeyInput" placeholder="Enter your license key" style="
-                width: 100%;
-                max-width: 300px;
-                padding: 12px 15px;
-                border: 2px solid #3498db;
-                border-radius: 8px;
-                background: rgba(255,255,255,0.1);
-                color: #fff;
-                font-size: 14px;
-                text-align: center;
-                margin-bottom: 15px;
-            "/>
-            <button id="activateBtn" style="
-                background: linear-gradient(135deg, #3498db, #2980b9);
-                color: white;
-                border: none;
-                padding: 12px 30px;
-                border-radius: 8px;
-                font-size: 14px;
-                font-weight: 600;
-                cursor: pointer;
-                margin-bottom: 20px;
-                transition: transform 0.2s, box-shadow 0.2s;
-            ">Activate License</button>
-            <p id="activationError" style="color: #e74c3c; display: none; margin-bottom: 15px;"></p>
-            <a href="https://amp.infinityfreeapp.com/#pricing" target="_blank" style="
-                color: #3498db;
-                text-decoration: none;
-                font-size: 13px;
-            ">Don't have a license? Get one here →</a>
-        </div>
-    `;
+    while (document.body.firstChild) document.body.removeChild(document.body.firstChild);
+    document.body.appendChild(buildActivationPrompt());
     
     const activateBtn = document.getElementById('activateBtn');
     const licenseInput = document.getElementById('licenseKeyInput');
@@ -171,7 +121,12 @@ function updateLicenseStatusDisplay(state) {
     const footer = document.querySelector('.footer');
     if (footer && state.isValid) {
         const planName = state.plan?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Licensed';
-        footer.innerHTML = `© 2025 AMPIQ - AMP v4.0.0 | <span style="color: #2ecc71;">${planName}</span>`;
+        while (footer.firstChild) footer.removeChild(footer.firstChild);
+        footer.textContent = '© 2025 AMPIQ - AMP v4.0.0 | ';
+        const planSpan = document.createElement('span');
+        planSpan.style.color = '#2ecc71';
+        planSpan.textContent = planName;
+        footer.appendChild(planSpan);
     }
 }
 
@@ -979,7 +934,7 @@ function updateSlotDisplay(stats) {
         }
         
         // Clear and populate slots
-        slotsGrid.innerHTML = '';
+        while (slotsGrid.firstChild) slotsGrid.removeChild(slotsGrid.firstChild);
         stats.slotStats.forEach((slot, index) => {
             const slotDiv = document.createElement('div');
             slotDiv.className = 'slot-item';
@@ -994,18 +949,29 @@ function updateSlotDisplay(stats) {
             const utilization = parseFloat(slot.utilization) || 0;
             const barColor = utilization > 80 ? '#e74c3c' : utilization > 50 ? '#f39c12' : '#2ecc71';
             
-            slotDiv.innerHTML = `
-                <div style="font-size: 11px; font-weight: 600; margin-bottom: 4px; color: #00d4aa;">Slot ${slot.id}</div>
-                <div style="font-size: 10px; color: #bdc3c7; margin-bottom: 6px;">
-                    ${slot.usedMB} MB / ${slot.maxMB} MB
-                </div>
-                <div style="background: rgba(0,0,0,0.3); border-radius: 4px; height: 6px; overflow: hidden; margin-bottom: 4px;">
-                    <div style="background: ${barColor}; height: 100%; width: ${utilization}%; transition: width 0.3s;"></div>
-                </div>
-                <div style="font-size: 9px; color: #95a5a6;">
-                    ${slot.chunkCount} chunks · ${slot.utilization}
-                </div>
-            `;
+            const slotLabel = document.createElement('div');
+            slotLabel.style.cssText = 'font-size: 11px; font-weight: 600; margin-bottom: 4px; color: #00d4aa;';
+            slotLabel.textContent = `Slot ${slot.id}`;
+            
+            const slotSize = document.createElement('div');
+            slotSize.style.cssText = 'font-size: 10px; color: #bdc3c7; margin-bottom: 6px;';
+            slotSize.textContent = `${slot.usedMB} MB / ${slot.maxMB} MB`;
+            
+            const barContainer = document.createElement('div');
+            barContainer.style.cssText = 'background: rgba(0,0,0,0.3); border-radius: 4px; height: 6px; overflow: hidden; margin-bottom: 4px;';
+            
+            const barFill = document.createElement('div');
+            barFill.style.cssText = `background: ${barColor}; height: 100%; width: ${utilization}%; transition: width 0.3s;`;
+            barContainer.appendChild(barFill);
+            
+            const slotInfo = document.createElement('div');
+            slotInfo.style.cssText = 'font-size: 9px; color: #95a5a6;';
+            slotInfo.textContent = `${slot.chunkCount} chunks · ${slot.utilization}`;
+            
+            slotDiv.appendChild(slotLabel);
+            slotDiv.appendChild(slotSize);
+            slotDiv.appendChild(barContainer);
+            slotDiv.appendChild(slotInfo);
             
             slotsGrid.appendChild(slotDiv);
         });
@@ -1066,29 +1032,92 @@ function showStatsModal(stats) {
         font-family: 'Segoe UI', sans-serif;
     `;
     
-    content.innerHTML = `
-        <h2 style="color: #3498db; margin-bottom: 15px;">Detailed Memory Statistics</h2>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-            <div>
-                <h3 style="color: #2ecc71; margin-bottom: 10px;">Memory Layers</h3>
-                <p><strong>DOM Chunks:</strong> ${stats.domChunks || 0}</p>
-                <p><strong>Hot Buffer Chunks:</strong> ${stats.hotBufferChunks || 0}</p>
-                <p><strong>Archived Chunks:</strong> ${stats.archivedChunks || 0}</p>
-                <p><strong>Total Chunks:</strong> ${stats.totalChunks || 0}</p>
-            </div>
-            <div>
-                <h3 style="color: #f39c12; margin-bottom: 10px;">Memory Usage</h3>
-                <p><strong>Hot Memory Size:</strong> ${formatBytes(stats.hotMemorySize || 0)}</p>
-                <p><strong>DOM Mirror Size:</strong> ${formatBytes(stats.domMirrorSize || 0)}</p>
-                <p><strong>Providers:</strong> ${(stats.providers || []).join(', ') || 'None'}</p>
-                <p><strong>Topics:</strong> ${(stats.topics || []).length || 0}</p>
-            </div>
-        </div>
-        <button onclick="this.closest('div[style*=\"position: fixed\"]').remove()" 
-                style="margin-top: 15px; padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;">
-            Close
-        </button>
-    `;
+    const h2 = document.createElement('h2');
+    h2.style.cssText = 'color: #3498db; margin-bottom: 15px;';
+    h2.textContent = 'Detailed Memory Statistics';
+    
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 15px;';
+    
+    const leftDiv = document.createElement('div');
+    const leftH3 = document.createElement('h3');
+    leftH3.style.cssText = 'color: #2ecc71; margin-bottom: 10px;';
+    leftH3.textContent = 'Memory Layers';
+    leftDiv.appendChild(leftH3);
+    
+    const domP = document.createElement('p');
+    const domStrong = document.createElement('strong');
+    domStrong.textContent = 'DOM Chunks:';
+    domP.appendChild(domStrong);
+    domP.appendChild(document.createTextNode(` ${stats.domChunks || 0}`));
+    leftDiv.appendChild(domP);
+    
+    const hotP = document.createElement('p');
+    const hotStrong = document.createElement('strong');
+    hotStrong.textContent = 'Hot Buffer Chunks:';
+    hotP.appendChild(hotStrong);
+    hotP.appendChild(document.createTextNode(` ${stats.hotBufferChunks || 0}`));
+    leftDiv.appendChild(hotP);
+    
+    const archP = document.createElement('p');
+    const archStrong = document.createElement('strong');
+    archStrong.textContent = 'Archived Chunks:';
+    archP.appendChild(archStrong);
+    archP.appendChild(document.createTextNode(` ${stats.archivedChunks || 0}`));
+    leftDiv.appendChild(archP);
+    
+    const totalP = document.createElement('p');
+    const totalStrong = document.createElement('strong');
+    totalStrong.textContent = 'Total Chunks:';
+    totalP.appendChild(totalStrong);
+    totalP.appendChild(document.createTextNode(` ${stats.totalChunks || 0}`));
+    leftDiv.appendChild(totalP);
+    
+    const rightDiv = document.createElement('div');
+    const rightH3 = document.createElement('h3');
+    rightH3.style.cssText = 'color: #f39c12; margin-bottom: 10px;';
+    rightH3.textContent = 'Memory Usage';
+    rightDiv.appendChild(rightH3);
+    
+    const hotMemP = document.createElement('p');
+    const hotMemStrong = document.createElement('strong');
+    hotMemStrong.textContent = 'Hot Memory Size:';
+    hotMemP.appendChild(hotMemStrong);
+    hotMemP.appendChild(document.createTextNode(` ${formatBytes(stats.hotMemorySize || 0)}`));
+    rightDiv.appendChild(hotMemP);
+    
+    const domMirrorP = document.createElement('p');
+    const domMirrorStrong = document.createElement('strong');
+    domMirrorStrong.textContent = 'DOM Mirror Size:';
+    domMirrorP.appendChild(domMirrorStrong);
+    domMirrorP.appendChild(document.createTextNode(` ${formatBytes(stats.domMirrorSize || 0)}`));
+    rightDiv.appendChild(domMirrorP);
+    
+    const providersP = document.createElement('p');
+    const providersStrong = document.createElement('strong');
+    providersStrong.textContent = 'Providers:';
+    providersP.appendChild(providersStrong);
+    providersP.appendChild(document.createTextNode(` ${(stats.providers || []).join(', ') || 'None'}`));
+    rightDiv.appendChild(providersP);
+    
+    const topicsP = document.createElement('p');
+    const topicsStrong = document.createElement('strong');
+    topicsStrong.textContent = 'Topics:';
+    topicsP.appendChild(topicsStrong);
+    topicsP.appendChild(document.createTextNode(` ${(stats.topics || []).length || 0}`));
+    rightDiv.appendChild(topicsP);
+    
+    grid.appendChild(leftDiv);
+    grid.appendChild(rightDiv);
+    
+    const closeBtn = document.createElement('button');
+    closeBtn.style.cssText = 'margin-top: 15px; padding: 8px 16px; background: #3498db; color: white; border: none; border-radius: 5px; cursor: pointer;';
+    closeBtn.textContent = 'Close';
+    closeBtn.addEventListener('click', () => modal.remove());
+    
+    content.appendChild(h2);
+    content.appendChild(grid);
+    content.appendChild(closeBtn);
     
     modal.appendChild(content);
     document.body.appendChild(modal);

@@ -134,7 +134,7 @@ const PERF_CONFIG = {
 };
 
 // Detect system capabilities and adjust performance
-async function detectSystemCapabilities() {
+function detectSystemCapabilities() {
   try {
     // Check available memory (if API available)
     if (navigator.deviceMemory) {
@@ -1875,7 +1875,7 @@ async function calculateInjectionAmount(provider, conversationId) {
 
 // Show context injection approval popup via content script
 // NOTE: Service Workers cannot access DOM, so we must delegate to content script
-async function showContextInjectionPopup(context, provider, tabId) {
+function showContextInjectionPopup(context, provider, tabId) {
   return new Promise((resolve) => {
     // Send message to content script to show the popup
     chrome.tabs.sendMessage(tabId, {
@@ -2172,7 +2172,7 @@ async function handleGetMemoryStats() {
   }
 }
 
-async function handleExportMemory() {
+function handleExportMemory() {
     const stats = activeMemoryPool.getStats();
     const allMemory = activeMemoryPool.getAllChunks();
     
@@ -2189,7 +2189,7 @@ async function handleExportMemory() {
     };
 }
 
-async function handleClearMemory() {
+function handleClearMemory() {
     // Clear all slots
     for (const slot of activeMemoryPool.slots) {
       slot.chunks.clear();
@@ -2257,7 +2257,7 @@ async function handleSendToDesktop(message) {
   }
 }
 
-async function handleGetDetailedStats() {
+function handleGetDetailedStats() {
     const stats = activeMemoryPool.getStats();
     
     return {
@@ -2464,7 +2464,7 @@ async function flushTabMemory(tabId) {
   }
 }
 
-async function checkAmpAppStatus() {
+function checkAmpAppStatus() {
   const now = Date.now();
   
   // Check every 30 seconds

@@ -77,21 +77,50 @@ function showInjectionApprovalPopup(context, provider, sendResponse) {
     color: #fff;
   `;
   
-  popup.innerHTML = `
-    <h3 style="margin: 0 0 15px 0; color: #3498db; font-size: 18px;">🔄 AMP Context Injection</h3>
-    <p style="margin: 0 0 12px 0; font-size: 14px; color: #bdc3c7;">
-      <strong style="color: #fff;">${provider}</strong> appears to have lost context. 
-      Inject previous conversation context?
-    </p>
-    <div style="background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 12px; max-height: 120px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.1);">
-      <strong style="color: #3498db;">Preview:</strong><br>
-      <span style="color: #bdc3c7;">${context.substring(0, 250)}${context.length > 250 ? '...' : ''}</span>
-    </div>
-    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;">
-      <button id="amp-inject-deny" style="padding: 10px 20px; border: 1px solid #bdc3c7; background: transparent; color: #bdc3c7; border-radius: 6px; cursor: pointer; font-size: 14px; transition: all 0.2s;">Cancel</button>
-      <button id="amp-inject-approve" style="padding: 10px 20px; border: none; background: linear-gradient(135deg, #3498db, #2980b9); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s;">Inject Context</button>
-    </div>
-  `;
+  const h3 = document.createElement('h3');
+  h3.style.cssText = 'margin: 0 0 15px 0; color: #3498db; font-size: 18px;';
+  h3.textContent = '🔄 AMP Context Injection';
+  
+  const p = document.createElement('p');
+  p.style.cssText = 'margin: 0 0 12px 0; font-size: 14px; color: #bdc3c7;';
+  const strong = document.createElement('strong');
+  strong.style.color = '#fff';
+  strong.textContent = provider;
+  p.appendChild(strong);
+  p.appendChild(document.createTextNode(' appears to have lost context. Inject previous conversation context?'));
+  
+  const previewDiv = document.createElement('div');
+  previewDiv.style.cssText = 'background: rgba(255,255,255,0.1); padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 12px; max-height: 120px; overflow-y: auto; border: 1px solid rgba(255,255,255,0.1);';
+  const previewStrong = document.createElement('strong');
+  previewStrong.style.color = '#3498db';
+  previewStrong.textContent = 'Preview:';
+  previewDiv.appendChild(previewStrong);
+  previewDiv.appendChild(document.createElement('br'));
+  const previewSpan = document.createElement('span');
+  previewSpan.style.color = '#bdc3c7';
+  previewSpan.textContent = context.substring(0, 250) + (context.length > 250 ? '...' : '');
+  previewDiv.appendChild(previewSpan);
+  
+  const buttonDiv = document.createElement('div');
+  buttonDiv.style.cssText = 'display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px;';
+  
+  const denyButton = document.createElement('button');
+  denyButton.id = 'amp-inject-deny';
+  denyButton.style.cssText = 'padding: 10px 20px; border: 1px solid #bdc3c7; background: transparent; color: #bdc3c7; border-radius: 6px; cursor: pointer; font-size: 14px; transition: all 0.2s;';
+  denyButton.textContent = 'Cancel';
+  
+  const approveButton = document.createElement('button');
+  approveButton.id = 'amp-inject-approve';
+  approveButton.style.cssText = 'padding: 10px 20px; border: none; background: linear-gradient(135deg, #3498db, #2980b9); color: white; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; transition: all 0.2s;';
+  approveButton.textContent = 'Inject Context';
+  
+  buttonDiv.appendChild(denyButton);
+  buttonDiv.appendChild(approveButton);
+  
+  popup.appendChild(h3);
+  popup.appendChild(p);
+  popup.appendChild(previewDiv);
+  popup.appendChild(buttonDiv);
   
   document.body.appendChild(popup);
   
@@ -254,15 +283,28 @@ function showMonitoringHint(provider, hostname) {
       transition: all 0.3s ease;
     `;
     
-    hint.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 8px;">
-        <span style="font-size: 16px;">💡</span>
-        <div>
-          <div style="font-weight: 600; margin-bottom: 4px;">Click AMP icon to monitor this ${provider} conversation</div>
-          <div style="font-size: 12px; opacity: 0.9;">${hostname}</div>
-        </div>
-      </div>
-    `;
+    const container = document.createElement('div');
+    container.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+    
+    const icon = document.createElement('span');
+    icon.style.fontSize = '16px';
+    icon.textContent = '💡';
+    
+    const textContainer = document.createElement('div');
+    
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight: 600; margin-bottom: 4px;';
+    title.textContent = `Click AMP icon to monitor this ${provider} conversation`;
+    
+    const subtitle = document.createElement('div');
+    subtitle.style.cssText = 'font-size: 12px; opacity: 0.9;';
+    subtitle.textContent = hostname;
+    
+    textContainer.appendChild(title);
+    textContainer.appendChild(subtitle);
+    container.appendChild(icon);
+    container.appendChild(textContainer);
+    hint.appendChild(container);
     
     // Add click handler to switch monitoring
     hint.addEventListener('click', async () => {
@@ -794,7 +836,7 @@ function shouldGenerateS9(progression) {
   return filledSquares >= 3;
 }
 
-async function generateCanonicalSummary(progression) {
+function generateCanonicalSummary(progression) {
   const allContent = Object.keys(progression)
     .filter(key => key.startsWith('sq') && key !== 'sq9')
     .map(key => progression[key]?.content)
@@ -890,32 +932,33 @@ function showContextCarryoverPrompt(provider, hostname) {
     border: 1px solid rgba(255,255,255,0.2);
   `;
   
-  notification.innerHTML = `
-    <div style="margin-bottom: 10px; font-weight: 600;">🔄 AMP Context Carryover</div>
-    <div style="margin-bottom: 15px; font-size: 13px;">
-      Carry over conversation context from previous AI sessions?
-    </div>
-    <div style="display: flex; gap: 8px;">
-      <button id="amp-carryover-yes" style="
-        background: rgba(46, 204, 113, 0.8);
-        border: none;
-        color: white;
-        padding: 6px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 12px;
-      ">Yes</button>
-      <button id="amp-carryover-no" style="
-        background: rgba(231, 76, 60, 0.8);
-        border: none;
-        color: white;
-        padding: 6px 12px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 12px;
-      ">No</button>
-    </div>
-  `;
+  const titleDiv = document.createElement('div');
+  titleDiv.style.cssText = 'margin-bottom: 10px; font-weight: 600;';
+  titleDiv.textContent = '🔄 AMP Context Carryover';
+  
+  const messageDiv = document.createElement('div');
+  messageDiv.style.cssText = 'margin-bottom: 15px; font-size: 13px;';
+  messageDiv.textContent = 'Carry over conversation context from previous AI sessions?';
+  
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = 'display: flex; gap: 8px;';
+  
+  const yesButton = document.createElement('button');
+  yesButton.id = 'amp-carryover-yes';
+  yesButton.style.cssText = 'background: rgba(46, 204, 113, 0.8); border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;';
+  yesButton.textContent = 'Yes';
+  
+  const noButton = document.createElement('button');
+  noButton.id = 'amp-carryover-no';
+  noButton.style.cssText = 'background: rgba(231, 76, 60, 0.8); border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px;';
+  noButton.textContent = 'No';
+  
+  buttonContainer.appendChild(yesButton);
+  buttonContainer.appendChild(noButton);
+  
+  notification.appendChild(titleDiv);
+  notification.appendChild(messageDiv);
+  notification.appendChild(buttonContainer);
   
   document.body.appendChild(notification);
   
@@ -926,7 +969,11 @@ function showContextCarryoverPrompt(provider, hostname) {
       tabId: currentTabId,
       carryover: true
     });
-    notification.innerHTML = '<div style="text-align: center; color: #2ecc71;">✅ Context carryover enabled</div>';
+    while (notification.firstChild) notification.removeChild(notification.firstChild);
+    const successDiv = document.createElement('div');
+    successDiv.style.cssText = 'text-align: center; color: #2ecc71;';
+    successDiv.textContent = '✅ Context carryover enabled';
+    notification.appendChild(successDiv);
     setTimeout(() => notification.remove(), 2000);
   });
   
@@ -936,7 +983,11 @@ function showContextCarryoverPrompt(provider, hostname) {
       tabId: currentTabId,
       carryover: false
     });
-    notification.innerHTML = '<div style="text-align: center; color: #e74c3c;">❌ Context carryover disabled</div>';
+    while (notification.firstChild) notification.removeChild(notification.firstChild);
+    const disabledDiv = document.createElement('div');
+    disabledDiv.style.cssText = 'text-align: center; color: #e74c3c;';
+    disabledDiv.textContent = '❌ Context carryover disabled';
+    notification.appendChild(disabledDiv);
     setTimeout(() => notification.remove(), 2000);
   });
   

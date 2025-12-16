@@ -24,106 +24,129 @@ const globalContext = isServiceWorker ? self : window;
 // chrome.storage.sync: 100KB total, 8KB per item
 // IndexedDB: Unlimited (limited by disk space)
 
-// Security: Military-grade encryption for DOM data with ephemeral keys
+// Security: AES-GCM encryption for DOM data using Web Crypto API
 class DOMEncryption {
   constructor() {
-    this.key = this.generateSessionKey();
+    this.key = null;
     this.keyRotationInterval = null;
+    this.initPromise = this.initialize();
+  }
+  
+  async initialize() {
+    await this.generateKey();
     this.startKeyRotation();
   }
   
-  generateSessionKey() {
-    // Generate cryptographically secure random key
-    const array = new Uint8Array(64); // 512 bits
-    crypto.getRandomValues(array);
-    return Array.from(array).map(b => b.toString(16).padStart(2, '0')).join('');
+  async generateKey() {
+    this.key = await crypto.subtle.generateKey(
+      {
+        name: 'AES-GCM',
+        length: 256
+      },
+      true,
+      ['encrypt', 'decrypt']
+    );
   }
   
-  // Rotate encryption key periodically for maximum security
   startKeyRotation() {
-    this.keyRotationInterval = setInterval(() => {
-      const oldKey = this.key;
-      this.key = this.generateSessionKey();
-      logUtils('AMP: Session key rotated for enhanced security');
-      
-      // Clear old key from memory (strings are immutable, so we can't modify them)
-      // Just let the old key be garbage collected
-    }, 10 * 60 * 1000); // Rotate every 10 minutes
+    this.keyRotationInterval = setInterval(async () => {
+      await this.generateKey();
+      logUtils('AMP: Session key rotated');
+    }, 10 * 60 * 1000);
   }
   
-  encrypt(data) {
+  async encrypt(data) {
+    await this.initPromise;
+    
     try {
       const text = typeof data === 'string' ? data : JSON.stringify(data);
+      const encoder = new TextEncoder();
+      const dataBuffer = encoder.encode(text);
       
-      // Add random salt for each encryption
-      const salt = crypto.getRandomValues(new Uint8Array(16));
-      const saltHex = Array.from(salt).map(b => b.toString(16).padStart(2, '0')).join('');
+      const iv = crypto.getRandomValues(new Uint8Array(12));
       
-      const encoded = btoa(text);
+      const encryptedBuffer = await crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv
+        },
+        this.key,
+        dataBuffer
+      );
       
-      // Multi-layer XOR encryption with salt
-      let result = '';
-      for (let i = 0; i < encoded.length; i++) {
-        const keyChar = this.key.charCodeAt(i % this.key.length);
-        const saltChar = salt[i % salt.length];
-        const charCode = encoded.charCodeAt(i) ^ keyChar ^ saltChar;
-        result += String.fromCharCode(charCode);
-      }
+      const combined = new Uint8Array(iv.length + encryptedBuffer.byteLength);
+      combined.set(iv, 0);
+      combined.set(new Uint8Array(encryptedBuffer), iv.length);
       
-      // Return salt + encrypted data
-      return saltHex + ':' + btoa(result);
+      return this.arrayBufferToBase64(combined.buffer);
     } catch (error) {
       logUtilsError('Encryption failed:', error);
-      return 'AMP_ENCRYPTED_ERROR';
-    }
-  }
-  
-  decrypt(encryptedData) {
-    try {
-      if (!encryptedData || encryptedData === 'AMP_ENCRYPTED_ERROR') {
-        return null;
-      }
-      
-      const [saltHex, encryptedText] = encryptedData.split(':');
-      if (!saltHex || !encryptedText) return null;
-      
-      // Reconstruct salt
-      const salt = new Uint8Array(saltHex.match(/.{2}/g).map(byte => parseInt(byte, 16)));
-      
-      const decoded = atob(encryptedText);
-      let result = '';
-      
-      // Decrypt with same key and salt
-      for (let i = 0; i < decoded.length; i++) {
-        const keyChar = this.key.charCodeAt(i % this.key.length);
-        const saltChar = salt[i % salt.length];
-        const charCode = decoded.charCodeAt(i) ^ keyChar ^ saltChar;
-        result += String.fromCharCode(charCode);
-      }
-      
-      const text = atob(result);
-      return JSON.parse(text);
-    } catch (error) {
-      logUtilsError('Decryption failed - data may be corrupted or key rotated:', error);
       return null;
     }
   }
   
-  // Secure memory wipe
+  async decrypt(encryptedData) {
+    await this.initPromise;
+    
+    try {
+      if (!encryptedData) return null;
+      
+      const combined = this.base64ToArrayBuffer(encryptedData);
+      const combinedArray = new Uint8Array(combined);
+      
+      const iv = combinedArray.slice(0, 12);
+      const ciphertext = combinedArray.slice(12);
+      
+      const decryptedBuffer = await crypto.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv: iv
+        },
+        this.key,
+        ciphertext
+      );
+      
+      const decoder = new TextDecoder();
+      const text = decoder.decode(decryptedBuffer);
+      
+      try {
+        return JSON.parse(text);
+      } catch {
+        return text;
+      }
+    } catch (error) {
+      logUtilsError('Decryption failed:', error);
+      return null;
+    }
+  }
+  
+  arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+  
+  base64ToArrayBuffer(base64) {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+  
   destroy() {
     if (this.keyRotationInterval) {
       clearInterval(this.keyRotationInterval);
+      this.keyRotationInterval = null;
     }
-    
-    // Overwrite key in memory
-    if (this.key) {
-      this.key = '0'.repeat(this.key.length);
-      delete this.key;
-    }
+    this.key = null;
   }
 }
 
-// Global DOM encryption instance
 const domEncryption = new DOMEncryption();
 
 // DevTools detection and protection
@@ -139,13 +162,13 @@ class DevToolsProtection {
   }
   
   startMonitoring() {
-    // Skip monitoring in Service Worker context (no window)
     if (isServiceWorker) return;
+    if (this.checkInterval) return;
     
     let devtools = { open: false, orientation: null };
     const threshold = 160;
     
-    setInterval(() => {
+    this.checkInterval = setInterval(() => {
       if (window.outerHeight - window.innerHeight > threshold || 
           window.outerWidth - window.innerWidth > threshold) {
         if (!devtools.open) {
@@ -161,6 +184,18 @@ class DevToolsProtection {
         }
       }
     }, 500);
+  }
+  
+  stopMonitoring() {
+    if (this.checkInterval) {
+      clearInterval(this.checkInterval);
+      this.checkInterval = null;
+    }
+  }
+  
+  destroy() {
+    this.stopMonitoring();
+    this.callbacks = [];
   }
 }
 
@@ -3163,7 +3198,7 @@ class DOMDataDump {
   // Clear dump
   async clearDump() {
     if (this.dumpContainer) {
-      this.dumpContainer.innerHTML = '';
+      while (this.dumpContainer.firstChild) this.dumpContainer.removeChild(this.dumpContainer.firstChild);
       logUtils('🗑️ DOM Data Dump cleared');
     }
   }
@@ -3359,7 +3394,7 @@ class DOMStorage {
   // Clear all storage
   async clearStorage() {
     if (this.storageContainer) {
-      this.storageContainer.innerHTML = '';
+      while (this.storageContainer.firstChild) this.storageContainer.removeChild(this.storageContainer.firstChild);
       logUtils('🗑️ DOM Storage cleared');
     }
   }
